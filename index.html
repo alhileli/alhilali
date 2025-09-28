@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة عرض أداء المحفظة</title>
+    <title> عرض أداء المحفظة </title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,6 +15,7 @@
         .negative { color: #dc3545; }
         .loader { border: 4px solid #30363d; border-top: 4px solid #388bfd; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        tr.border-b-thin { border-bottom: 1px solid #30363d; }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -23,12 +24,12 @@
         
         <header class="text-center space-y-2">
             <h1 class="text-3xl md:text-4xl font-bold text-white">لوحة عرض أداء المحفظة (MEXC)</h1>
-            <p class="text-gray-400">عرض شفاف ومباشر ومحدّث تلقائياً لأداء الصفقات.</p>
+            <p class="text-gray-400">تحليل شامل ومباشر لأداء المحفظة والصفقات.</p>
         </header>
 
         <div id="loading-state" class="text-center py-10">
             <div class="loader mx-auto"></div>
-            <p class="mt-4 text-gray-400">جاري جلب البيانات من الخادم الآمن...</p>
+            <p class="mt-4 text-gray-400">جاري جلب البيانات المطورة من الخادم الآمن...</p>
         </div>
 
         <div id="error-state" class="card p-6 text-center hidden">
@@ -36,16 +37,35 @@
         </div>
 
         <div id="dashboard-section" class="hidden space-y-8">
+            <!-- KPIs Section -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
                 <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">إجمالي قيمة المحفظة (USDT)</h3><p id="total-balance" class="text-3xl font-bold text-white mt-2">--.--</p></div>
                 <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">قيمة الأصول (USDT)</h3><p id="assets-value" class="text-3xl font-bold text-white mt-2">--.--</p></div>
                 <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">عدد الأصول المختلفة</h3><p id="assets-count" class="text-3xl font-bold mt-2">--</p></div>
             </div>
 
+            <!-- Open Positions Section -->
             <div>
-                <h2 class="text-2xl font-bold text-white mb-4">الأصول في المحفظة</h2>
+                <h2 class="text-2xl font-bold text-white mb-4">المراكز المفتوحة حالياً</h2>
                 <div class="card overflow-x-auto">
-                    <table class="w-full text-right"><thead class="bg-gray-800 text-gray-300"><tr><th class="p-4">الأصل</th><th class="p-4">الكمية الإجمالية</th><th class="p-4">القيمة التقديرية (USDT)</th></tr></thead><tbody id="assets-body"></tbody></table>
+                    <table class="w-full text-right"><thead class="bg-gray-800 text-gray-300"><tr><th class="p-4">الرمز</th><th class="p-4">النوع</th><th class="p-4">الرافعة</th><th class="p-4">سعر الدخول</th><th class="p-4">السعر الحالي</th><th class="p-4">الربح/الخسارة (USDT)</th><th class="p-4">الربح/الخسارة (%)</th></tr></thead><tbody id="open-positions-body"></tbody></table>
+                </div>
+            </div>
+
+            <!-- Trade History Analysis Section -->
+            <div>
+                <h2 class="text-2xl font-bold text-white mb-4">أبرز الصفقات التاريخية</h2>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Best Trades -->
+                    <div class="card p-6">
+                        <h3 class="text-xl font-bold text-green-400 mb-4">أفضل 3 صفقات رابحة</h3>
+                        <table class="w-full text-right"><thead class="text-gray-300"><tr><th class="pb-2">الرمز</th><th class="pb-2">تاريخ الإغلاق</th><th class="pb-2">الربح (USDT)</th></tr></thead><tbody id="best-trades-body"></tbody></table>
+                    </div>
+                    <!-- Worst Trades -->
+                    <div class="card p-6">
+                        <h3 class="text-xl font-bold text-red-400 mb-4">أسوأ 3 صفقات خاسرة</h3>
+                        <table class="w-full text-right"><thead class="text-gray-300"><tr><th class="pb-2">الرمز</th><th class="pb-2">تاريخ الإغلاق</th><th class="pb-2">الخسارة (USDT)</th></tr></thead><tbody id="worst-trades-body"></tbody></table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -63,12 +83,13 @@
             totalBalanceElem: document.getElementById('total-balance'),
             assetsValueElem: document.getElementById('assets-value'),
             assetsCountElem: document.getElementById('assets-count'),
-            assetsBody: document.getElementById('assets-body'),
+            openPositionsBody: document.getElementById('open-positions-body'),
+            bestTradesBody: document.getElementById('best-trades-body'),
+            worstTradesBody: document.getElementById('worst-trades-body'),
         };
 
         async function fetchData() {
             try {
-                // This URL will be your backend server's URL once deployed
                 const response = await fetch('/api/portfolio-data'); 
                 
                 if (!response.ok) {
@@ -91,25 +112,74 @@
             }
         }
 
+        function formatPnl(value, elementClass) {
+            const isPositive = value >= 0;
+            const sign = isPositive ? '+' : '';
+            elementClass.className = isPositive ? 'positive' : 'negative';
+            return `${sign}${value.toFixed(2)}`;
+        }
+
         function updateDashboard(data) {
             UI.totalBalanceElem.textContent = data.totalBalance.toFixed(2);
             UI.assetsValueElem.textContent = data.assetsValue.toFixed(2);
-            UI.assetsCountElem.textContent = data.assets.length;
+            UI.assetsCountElem.textContent = data.assetsCount;
             
-            UI.assetsBody.innerHTML = ''; // Clear previous data
-            data.assets.forEach(asset => {
-                const row = document.createElement('tr');
-                row.className = 'border-b border-gray-700 hover:bg-gray-800';
-                row.innerHTML = `
-                    <td class="p-4 font-medium text-white">${asset.asset}</td>
-                    <td class="p-4">${asset.totalAmount.toFixed(6)}</td>
-                    <td class="p-4 font-bold text-white">${asset.value.toFixed(2)}</td>
-                `;
-                UI.assetsBody.appendChild(row);
-            });
+            // Populate Open Positions
+            UI.openPositionsBody.innerHTML = '';
+            if (data.openPositions && data.openPositions.length > 0) {
+                data.openPositions.forEach(pos => {
+                    const row = document.createElement('tr');
+                    row.className = 'border-b-thin';
+                    const pnlClass = pos.unrealizedPNL >= 0 ? 'positive' : 'negative';
+                    const posTypeClass = pos.positionType === 'Long' ? 'text-green-400' : 'text-red-400';
+                    row.innerHTML = `
+                        <td class="p-4 font-medium text-white">${pos.symbol}</td>
+                        <td class="p-4 font-bold ${posTypeClass}">${pos.positionType}</td>
+                        <td class="p-4">${pos.leverage}x</td>
+                        <td class="p-4">${pos.openPrice}</td>
+                        <td class="p-4">${pos.currentPrice}</td>
+                        <td class="p-4 font-bold ${pnlClass}">${formatPnl(pos.unrealizedPNL, {})}</td>
+                        <td class="p-4 font-bold ${pnlClass}">${formatPnl(pos.pnlPercentage, {})} %</td>
+                    `;
+                    UI.openPositionsBody.appendChild(row);
+                });
+            } else {
+                UI.openPositionsBody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500">لا توجد مراكز مفتوحة حالياً.</td></tr>';
+            }
+
+            // Populate Best Trades
+            UI.bestTradesBody.innerHTML = '';
+            if (data.bestTrades && data.bestTrades.length > 0) {
+                data.bestTrades.forEach(trade => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="py-2 font-medium">${trade.symbol}</td>
+                        <td class="py-2 text-gray-400">${trade.date}</td>
+                        <td class="py-2 font-bold positive">+${trade.pnl.toFixed(2)}</td>
+                    `;
+                    UI.bestTradesBody.appendChild(row);
+                });
+            } else {
+                 UI.bestTradesBody.innerHTML = '<tr><td colspan="3" class="py-2 text-center text-gray-500">لا توجد بيانات كافية.</td></tr>';
+            }
+            
+            // Populate Worst Trades
+            UI.worstTradesBody.innerHTML = '';
+             if (data.worstTrades && data.worstTrades.length > 0) {
+                data.worstTrades.forEach(trade => {
+                    const row = document.createElement('tr');
+                     row.innerHTML = `
+                        <td class="py-2 font-medium">${trade.symbol}</td>
+                        <td class="py-2 text-gray-400">${trade.date}</td>
+                        <td class="py-2 font-bold negative">${trade.pnl.toFixed(2)}</td>
+                    `;
+                    UI.worstTradesBody.appendChild(row);
+                });
+            } else {
+                UI.worstTradesBody.innerHTML = '<tr><td colspan="3" class="py-2 text-center text-gray-500">لا توجد بيانات كافية.</td></tr>';
+            }
         }
 
-        // Fetch data on page load and then every 60 seconds
         document.addEventListener('DOMContentLoaded', () => {
             fetchData();
             setInterval(fetchData, 60000); 
