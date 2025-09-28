@@ -3,73 +3,82 @@ const express = require('express');
 const fetch = require('node-fetch');
 const CryptoJS = require('crypto-js');
 const cors = require('cors');
-require('dotenv').config(); // To load environment variables
+const path = require('path');
+require('dotenv').config();
 
 // --- Configuration ---
 const app = express();
 const port = process.env.PORT || 3000;
-const API_BASE_URL = 'https://api.mexc.com';
+// IMPORTANT: Switched to the Futures API base URL
+const API_BASE_URL = 'https://contract.mexc.com';
 
-// --- API Keys (Loaded securely from environment variables) ---
+// --- API Keys ---
 const apiKey = process.env.MEXC_API_KEY;
 const secretKey = process.env.MEXC_SECRET_KEY;
 
 // --- Middleware ---
-app.use(cors()); // Allow requests from the frontend
-app.use(express.static('.')); // Serve the index.html file
+app.use(cors());
+app.use(express.static(__dirname));
 
-// --- The Secure API Endpoint ---
+// --- API Route for Futures Data ---
 app.get('/api/portfolio-data', async (req, res) => {
-    // Check if API keys are configured on the server
     if (!apiKey || !secretKey) {
         return res.status(500).json({ error: 'لم يتم إعداد مفاتيح API على الخادم بشكل صحيح.' });
     }
 
     try {
-        // 1. Fetch Account Information (Balances)
-        const accountInfo = await makeRequest('/api/v3/account');
-        if (!accountInfo || !accountInfo.balances) {
-             throw new Error('استجابة غير صالحة من MEXC API عند جلب الأرصدة.');
+        // 1. Fetch Futures Account Assets
+        const accountAssets = await makeRequest('/api/v1/private/account/assets');
+        if (!accountAssets.success || !accountAssets.data) {
+            throw new Error(accountAssets.message || 'استجابة غير صالحة من MEXC API عند جلب أصول العقود الآجلة.');
         }
 
-        const assets = accountInfo.balances.filter(b => (parseFloat(b.free) + parseFloat(b.locked)) > 0.00001);
+        // Filter assets with a balance
+        const assets = accountAssets.data.filter(b => parseFloat(b.availableBalance) > 0);
 
-        // 2. Fetch Current Prices for all assets
-        const symbols = assets.filter(a => a.asset !== 'USDT').map(a => `${a.asset}USDT`);
-        const pricesResponse = await fetch(`${API_BASE_URL}/api/v3/ticker/price`);
-        const allPrices = await pricesResponse.json();
-        
+        // 2. Fetch all Futures contract tickers to get their prices
+        const tickerResponse = await fetch(`${API_BASE_URL}/api/v1/contract/ticker`);
+        const allTickers = await tickerResponse.json();
+        if (!allTickers.success || !allTickers.data) {
+            throw new Error('فشل في جلب أسعار العقود الآجلة.');
+        }
+
         const prices = {};
-        allPrices.forEach(item => {
-            if (symbols.includes(item.symbol) || item.symbol === 'USDTUSDT') {
-                prices[item.symbol] = parseFloat(item.price);
-            }
+        allTickers.data.forEach(ticker => {
+            // We use the lastPrice for calculation
+            prices[ticker.symbol] = parseFloat(ticker.lastPrice);
         });
-        prices['USDTUSDT'] = 1; // USDT is always 1 dollar
 
         // 3. Calculate portfolio values
         let totalBalance = 0;
         const processedAssets = assets.map(asset => {
-            const totalAmount = parseFloat(asset.free) + parseFloat(asset.locked);
-            const symbol = `${asset.asset}USDT`;
-            const price = prices[symbol] || 0;
-            const value = totalAmount * price;
+            const totalAmount = parseFloat(asset.availableBalance);
+            // Futures symbols are like BTC_USDT, ETH_USDT
+            const symbol = `${asset.currency}_USDT`;
+            
+            let value = 0;
+            if (asset.currency === 'USDT') {
+                value = totalAmount;
+            } else if (prices[symbol]) {
+                value = totalAmount * prices[symbol];
+            }
+            
             totalBalance += value;
+
             return {
-                asset: asset.asset,
+                asset: asset.currency,
                 totalAmount,
                 value
             };
         });
+        
+        const assetsValue = processedAssets.filter(a => a.asset !== 'USDT').reduce((sum, a) => sum + a.value, 0);
 
-        const usdtAsset = processedAssets.find(a => a.asset === 'USDT');
-        const assetsValue = usdtAsset ? totalBalance - usdtAsset.value : totalBalance;
-
-        // 4. Send the final, clean data to the frontend
+        // 4. Send the final data
         res.json({
             totalBalance,
             assetsValue,
-            assets: processedAssets.sort((a, b) => b.value - a.value) // Sort by value
+            assets: processedAssets.sort((a, b) => b.value - a.value)
         });
 
     } catch (error) {
@@ -78,23 +87,33 @@ app.get('/api/portfolio-data', async (req, res) => {
     }
 });
 
-// --- Helper function to make signed requests to MEXC ---
-async function makeRequest(endpoint, params = {}) {
-    const timestamp = Date.now();
-    const recvWindow = 5000;
-    const queryString = new URLSearchParams({ ...params, timestamp, recvWindow }).toString();
-    
-    const signature = CryptoJS.HmacSHA256(queryString, secretKey).toString(CryptoJS.enc.Hex);
-    const url = `${API_BASE_URL}${endpoint}?${queryString}&signature=${signature}`;
+// --- Serve the HTML file for all other routes ---
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
+// --- UPDATED Helper function for FUTURES API requests ---
+async function makeRequest(endpoint) {
+    const timestamp = Date.now();
+    // Futures API signing is different from Spot API
+    const stringToSign = apiKey + timestamp;
+    const signature = CryptoJS.HmacSHA256(stringToSign, secretKey).toString(CryptoJS.enc.Hex);
+
+    const url = `${API_BASE_URL}${endpoint}`;
     const response = await fetch(url, {
         method: 'GET',
-        headers: { 'X-MEXC-APIKEY': apiKey, 'Content-Type': 'application/json' }
+        headers: {
+            'Content-Type': 'application/json',
+            'ApiKey': apiKey,
+            'Request-Time': timestamp,
+            'Signature': signature
+        }
     });
 
     if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.msg || `HTTP Error ${response.status}`);
+        // Use 'message' for futures API errors, not 'msg'
+        throw new Error(errorData.message || `HTTP Error ${response.status}`);
     }
     return response.json();
 }
