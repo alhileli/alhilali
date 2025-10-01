@@ -26,28 +26,26 @@ app.get('/api/portfolio-data', async (req, res) => {
     }
 
     try {
-        // Fetch both account assets and open positions concurrently for better performance
+        // Fetch all data concurrently for better performance
         const [accountAssetsResponse, openPositionsResponse, historyDealsResponse] = await Promise.all([
-            makeRequest('/api/v1/private/account/assets').catch(e => ({ success: false, error: e })),
-            makeRequest('/api/v1/private/position/open_positions').catch(e => ({ success: false, error: e })),
-            makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 }).catch(e => ({ success: false, error: e }))
+            makeRequest('/api/v1/private/account/assets').catch(e => { console.error("Error in assets request:", e.message); return { success: false, data: [] }; }),
+            makeRequest('/api/v1/private/position/open_positions').catch(e => { console.error("Error in open positions request:", e.message); return { success: false, data: [] }; }),
+            makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 }).catch(e => { console.error("Error in history request:", e.message); return { success: false, data: { resultList: [] } }; })
         ]);
 
         // --- 1. Process Account Assets (Available Balance) ---
         let availableBalance = 0;
         let assetsCount = 0;
-        if (accountAssetsResponse.success && accountAssetsResponse.data) {
+        if (accountAssetsResponse.success && Array.isArray(accountAssetsResponse.data)) {
             const assets = accountAssetsResponse.data;
             availableBalance = assets.reduce((sum, asset) => sum + parseFloat(asset.availableBalance || 0), 0);
             assetsCount = assets.length;
-        } else {
-            console.error('Error fetching account assets:', accountAssetsResponse.error?.message);
         }
 
         // --- 2. Process Open Positions ---
         let openPositions = [];
         let totalMarginInPositions = 0;
-        if (openPositionsResponse.success && openPositionsResponse.data) {
+        if (openPositionsResponse.success && Array.isArray(openPositionsResponse.data)) {
             totalMarginInPositions = openPositionsResponse.data.reduce((sum, pos) => sum + parseFloat(pos.im || 0), 0);
             openPositions = openPositionsResponse.data.map(pos => ({
                 symbol: pos.symbol,
@@ -56,10 +54,8 @@ app.get('/api/portfolio-data', async (req, res) => {
                 openPrice: parseFloat(pos.holdAvgPrice || 0),
                 currentPrice: parseFloat(pos.lastPrice || 0),
                 unrealizedPNL: parseFloat(pos.unrealizedPL || 0),
-                pnlPercentage: (parseFloat(pos.unrealizedPL || 0) / (parseFloat(pos.im) || 1)) * 100 // Avoid division by zero
+                pnlPercentage: (parseFloat(pos.unrealizedPL || 0) / (parseFloat(pos.im) || 1)) * 100
             }));
-        } else {
-            console.error('Error fetching open positions:', openPositionsResponse.error?.message);
         }
 
         // --- 3. Calculate TRUE Total Balance ---
@@ -68,26 +64,24 @@ app.get('/api/portfolio-data', async (req, res) => {
         // --- 4. Process and Analyze Trade History ---
         let bestTrades = [];
         let worstTrades = [];
-        if (historyDealsResponse.success && historyDealsResponse.data?.resultList) {
+        if (historyDealsResponse.success && historyDealsResponse.data && Array.isArray(historyDealsResponse.data.resultList)) {
             const closedTrades = historyDealsResponse.data.resultList
-                .filter(order => order.state === 3 && order.profit !== undefined)
+                .filter(order => order.state === 3 && typeof order.profit !== 'undefined')
                 .map(order => ({
                     symbol: order.symbol,
                     pnl: parseFloat(order.profit),
-                    date: new Date(order.updateTime).toLocaleDate-string('ar-EG')
+                    date: new Date(order.updateTime).toLocaleDateString('ar-EG') // CORRECTED TYPO HERE
                 }));
             
             closedTrades.sort((a, b) => b.pnl - a.pnl);
             bestTrades = closedTrades.slice(0, 3);
             worstTrades = closedTrades.filter(t => t.pnl < 0).slice(-3).reverse();
-        } else {
-             console.error('Error fetching trade history:', historyDealsResponse.error?.message);
         }
 
         // --- 5. Send the final compiled data ---
         res.json({
             totalBalance: totalBalance,
-            assetsValue: totalMarginInPositions, // We'll consider assets value as the margin in positions
+            assetsValue: totalMarginInPositions,
             assetsCount: assetsCount,
             openPositions: openPositions,
             bestTrades: bestTrades,
@@ -127,7 +121,7 @@ async function makeRequest(endpoint, params = {}) {
     const contentType = response.headers.get("content-type");
     if (contentType && contentType.indexOf("application/json") !== -1) {
         const jsonResponse = await response.json();
-        if (jsonResponse.code !== 0) { // MEXC specific error code check
+        if (jsonResponse.code !== 0) {
              throw new Error(`MEXC API Error (${jsonResponse.code}): ${jsonResponse.msg}`);
         }
         return jsonResponse;
