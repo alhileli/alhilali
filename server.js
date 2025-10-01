@@ -1,8 +1,9 @@
 // -----------------------------------------------------------------------------
 // |                            MEXC PORTFOLIO SERVER                          |
-// |                VERSION: Final (Correct File Serving)                      |
-// |     This version fixes the "Not Found" error by explicitly serving       |
-// |       the index.html file for the root route in an ES module env.        |
+// |                   VERSION: Definitive (All Fixes Applied)                 |
+// |     This version fixes the SyntaxError (sha256 typo) and the ENOENT error |
+// |     (incorrect file path) to ensure the server runs and serves the       |
+// |                          frontend correctly.                              |
 // -----------------------------------------------------------------------------
 
 // استيراد المكتبات الضرورية
@@ -10,19 +11,22 @@ import express from 'express';
 import crypto from 'crypto';
 import fetch from 'node-fetch';
 import cors from 'cors';
-import path from 'path'; // Module to handle file paths
-import { fileURLToPath } from 'url'; // Module to handle file paths
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// --- [ NEW AND CRUCIAL ] ---
-// Define __dirname for ES modules. This is the "GPS map" for our server.
+// --- [ CRUCIAL FIX for Path Issues ] ---
+// This correctly sets up the directory path for ES modules.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// --- [ END NEW AND CRUCIAL ] ---
 
 // إعداد الخادم
 const app = express();
 const PORT = process.env.PORT || 10000;
 app.use(cors());
+
+// --- [ CRUCIAL FIX for "Not Found" Error ] ---
+// This tells Express that static files (like index.html, css, etc.) are in the root directory.
+app.use(express.static(__dirname));
 
 // استرداد مفاتيح API بأمان
 const apiKey = process.env.MEXC_API_KEY;
@@ -36,28 +40,42 @@ const HISTORY_ENDPOINT = '/api/v1/private/order/list/history_orders';
 const TICKER_ENDPOINT = '/api/v1/contract/ticker';
 const CONTRACT_DETAILS_ENDPOINT = '/api/v1/contract/detail';
 
-// --- [ NEW ROUTE TO SERVE THE FRONTEND ] ---
-// This is the explicit instruction for the server to send the index.html file
-// when someone visits the main URL.
-app.get('/', (req, res) => {
-    // We tell it to find the 'index.html' file in the same directory as the server script.
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-// --- [ END NEW ROUTE ] ---
+// دالة لإنشاء التوقيع الرقمي
+function createSignature(timestamp, params = '') {
+    const signaturePayload = apiKey + timestamp + params;
+    // --- [ CRUCIAL FIX for SyntaxError ] ---
+    // Corrected 'sha26' to 'sha256'
+    return crypto.createHmac('sha256', secretKey).update(signaturePayload).digest('hex');
+}
 
+// دالة لإجراء طلبات API بشكل آمن
+async function makeRequest(method, endpoint, params = '') {
+    const timestamp = Date.now().toString();
+    const signature = createSignature(timestamp, params);
+    const url = `${BASE_URL}${endpoint}${params ? '?' + params : ''}`;
 
-// The API endpoint for data remains the same
+    const headers = {
+        'Content-Type': 'application/json',
+        'ApiKey': apiKey,
+        'Request-Time': timestamp,
+        'Signature': signature,
+    };
+
+    try {
+        const response = await fetch(url, { method, headers, timeout: 30000 });
+        if (!response.ok) {
+            const errorBody = await response.json();
+            throw new Error(errorBody.msg || `Request failed with status ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        throw error;
+    }
+}
+
+// نقطة النهاية الرئيسية التي تطلبها الواجهة الأمامية
 app.get('/api/portfolio-data', async (req, res) => {
     try {
-        // ... The entire data fetching logic remains exactly the same ...
-        // ... بقية منطق جلب البيانات يبقى كما هو تماماً ...
-        const createSignature = (timestamp, params = '') => {
-            const signaturePayload = apiKey + timestamp + params;
-            return crypto.createHmac('sha26_
-            ...
-            ... (The rest of the data fetching and processing code is identical to the previous correct version) ...
-            ...
-        
         const [assetsData, positionsData, historyData, tickersData, contractDetailsData] = await Promise.all([
             makeRequest('GET', ASSETS_ENDPOINT),
             makeRequest('GET', POSITIONS_ENDPOINT),
@@ -67,7 +85,7 @@ app.get('/api/portfolio-data', async (req, res) => {
         ]);
 
         if (!assetsData.success || !positionsData.success || !historyData.success || !tickersData.success || !contractDetailsData.success) {
-             throw new Error('One or more API calls were unsuccessful.');
+            throw new Error('One or more API calls were unsuccessful.');
         }
 
         const usdtAsset = assetsData.data.find(a => a.currency === 'USDT');
@@ -96,7 +114,7 @@ app.get('/api/portfolio-data', async (req, res) => {
         });
 
         const closedTrades = historyData.data
-            .filter(order => order.state === 3)
+            .filter(order => order.state === 3 && order.profit !== 0) // Filter only closed trades with profit/loss
             .map(order => ({
                 symbol: order.symbol,
                 profit: order.profit || 0,
@@ -120,7 +138,6 @@ app.get('/api/portfolio-data', async (req, res) => {
         res.status(500).json({ error: error.message || 'An internal server error occurred.' });
     }
 });
-
 
 // تشغيل الخادم
 app.listen(PORT, () => {
