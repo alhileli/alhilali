@@ -88,14 +88,23 @@ async function getPortfolioDataAndLog() {
         fetch(`${BASE_URL}/api/v1/contract/detail`).then(r => r.json()),
     ]);
 
-    const usdtAsset = assetsData.data.find(a => a.currency === 'USDT');
+    const usdtAsset = (assetsData.data || []).find(a => a.currency === 'USDT');
     const totalEquity = usdtAsset ? usdtAsset.equity : 0;
     
     // تسجيل القيمة الجديدة للمحفظة في قاعدة البيانات
     if (pool) {
         try {
-            await pool.query('INSERT INTO portfolio_history (equity, timestamp) VALUES ($1, NOW())', [totalEquity]);
-            console.log(`Successfully logged new equity: ${totalEquity}`);
+            // To prevent logging too frequently, let's check the last log time
+            const lastLog = await pool.query('SELECT timestamp FROM portfolio_history ORDER BY timestamp DESC LIMIT 1');
+            const now = new Date();
+            const lastLogTime = lastLog.rows.length > 0 ? new Date(lastLog.rows[0].timestamp) : new Date(0);
+            const minutesSinceLastLog = (now - lastLogTime) / 60000;
+
+            // Only log if it has been more than ~5 minutes
+            if (minutesSinceLastLog > 5) {
+                await pool.query('INSERT INTO portfolio_history (equity, timestamp) VALUES ($1, NOW())', [totalEquity]);
+                console.log(`Successfully logged new equity: ${totalEquity}`);
+            }
         } catch (err) {
             console.error('Error logging equity to database:', err);
         }
@@ -105,8 +114,8 @@ async function getPortfolioDataAndLog() {
     const totalAssetsValue = usdtAsset ? usdtAsset.positionMargin : 0;
     const openPositions = positionsData.data ? positionsData.data : [];
     
-    const tickersMap = new Map(tickersData.data.map(t => [t.symbol, t.lastPrice]));
-    const contractSizeMap = new Map(contractDetailsData.data.map(c => [c.symbol, c.contractSize]));
+    const tickersMap = new Map((tickersData.data || []).map(t => [t.symbol, t.lastPrice]));
+    const contractSizeMap = new Map((contractDetailsData.data || []).map(c => [c.symbol, c.contractSize]));
     
     const processedPositions = openPositions.map(pos => {
         const currentPrice = tickersMap.get(pos.symbol) || 0;
@@ -137,6 +146,7 @@ app.get('/api/portfolio-data', async (req, res) => {
         const data = await getPortfolioDataAndLog(); // استخدام الدالة الجديدة
         res.json(data);
     } catch (error) {
+        console.error("Error in /api/portfolio-data endpoint:", error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -147,9 +157,21 @@ app.get('/api/portfolio-history', async (req, res) => {
         return res.status(503).json({ error: "Database service is not configured." });
     }
     try {
-        const history = await pool.query('SELECT equity, timestamp FROM portfolio_history ORDER BY timestamp ASC');
+        // Fetch a limited number of points, maybe one per day for the last 90 days for performance
+        const history = await pool.query(`
+            WITH daily_equity AS (
+                SELECT
+                    DATE_TRUNC('day', timestamp) AS day,
+                    AVG(equity) as avg_equity
+                FROM portfolio_history
+                WHERE timestamp > NOW() - INTERVAL '90 days'
+                GROUP BY day
+            )
+            SELECT avg_equity as equity, day as timestamp FROM daily_equity ORDER BY day ASC;
+        `);
         res.json(history.rows);
     } catch (err) {
+        console.error("Error in /api/portfolio-history endpoint:", err);
         res.status(500).json({ error: err.message });
     }
 });
