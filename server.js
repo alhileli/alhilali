@@ -25,67 +25,76 @@ app.get('/api/portfolio-data', async (req, res) => {
         return res.status(500).json({ error: 'لم يتم إعداد مفاتيح API على الخادم بشكل صحيح.' });
     }
 
+    const finalData = {};
+
     try {
-        // Use Promise.all to fetch all data concurrently for better performance
-        const [
-            accountAssetsResponse,
-            openPositionsResponse,
-            historyDealsResponse
-        ] = await Promise.all([
-            makeRequest('/api/v1/private/account/assets'),
-            makeRequest('/api/v1/private/position/open_positions'),
-            makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 }) // Fetch last 200 trades
-        ]);
-        
-        // --- 1. Process Account Balance ---
-        if (!accountAssetsResponse.success || !accountAssetsResponse.data) throw new Error('فشل في جلب أصول المحفظة.');
-        const assets = accountAssetsResponse.data;
-        const totalBalance = assets.reduce((sum, asset) => sum + parseFloat(asset.im), 0);
-        const assetsValue = assets.filter(a => a.currency !== 'USDT').reduce((sum, asset) => sum + parseFloat(asset.im), 0);
-
-        // --- 2. Process Open Positions ---
-        if (!openPositionsResponse.success || !openPositionsResponse.data) throw new Error('فشل في جلب المراكز المفتوحة.');
-        const openPositions = openPositionsResponse.data.map(pos => ({
-            symbol: pos.symbol,
-            positionType: pos.positionType === 1 ? 'Long' : 'Short',
-            leverage: pos.leverage,
-            openPrice: parseFloat(pos.holdAvgPrice),
-            currentPrice: parseFloat(pos.lastPrice),
-            unrealizedPNL: parseFloat(pos.unrealizedPL),
-            pnlPercentage: (parseFloat(pos.unrealizedPL) / parseFloat(pos.im)) * 100
-        }));
-
-        // --- 3. Analyze Trade History ---
-        if (!historyDealsResponse.success || !historyDealsResponse.data?.resultList) throw new Error('فشل في جلب سجل الصفقات.');
-        // Filter only closed/filled orders and calculate PNL for each
-        const closedTrades = historyDealsResponse.data.resultList
-            .filter(order => order.state === 3) // State 3 means fully filled
-            .map(order => ({
-                symbol: order.symbol,
-                pnl: parseFloat(order.profit), // Assuming 'profit' field exists and is the PNL
-                date: new Date(order.updateTime).toLocaleDateString('ar-EG')
-            }));
+        // --- 1. Fetch Account Assets (Balance) ---
+        try {
+            const accountAssetsResponse = await makeRequest('/api/v1/private/account/assets');
+            if (!accountAssetsResponse.success || !accountAssetsResponse.data) throw new Error('فشل في جلب أصول المحفظة.');
             
-        closedTrades.sort((a, b) => b.pnl - a.pnl); // Sort by profit, descending
-        
-        const bestTrades = closedTrades.slice(0, 3);
-        const worstTrades = closedTrades.slice(-3).reverse();
+            const assets = accountAssetsResponse.data;
+            finalData.totalBalance = assets.reduce((sum, asset) => sum + parseFloat(asset.im || 0), 0);
+            finalData.assetsValue = assets.filter(a => a.currency !== 'USDT').reduce((sum, asset) => sum + parseFloat(asset.im || 0), 0);
+            finalData.assetsCount = assets.length;
+        } catch (error) {
+            console.error('Error fetching account assets:', error.message);
+            finalData.totalBalance = 0;
+            finalData.assetsValue = 0;
+            finalData.assetsCount = 0;
+        }
+
+        // --- 2. Fetch Open Positions ---
+        try {
+            const openPositionsResponse = await makeRequest('/api/v1/private/position/open_positions');
+            if (!openPositionsResponse.success) throw new Error(openPositionsResponse.message || 'فشل في جلب المراكز المفتوحة.');
+            
+            finalData.openPositions = (openPositionsResponse.data || []).map(pos => ({
+                symbol: pos.symbol,
+                positionType: pos.positionType === 1 ? 'Long' : 'Short',
+                leverage: pos.leverage,
+                openPrice: parseFloat(pos.holdAvgPrice || 0),
+                currentPrice: parseFloat(pos.lastPrice || 0),
+                unrealizedPNL: parseFloat(pos.unrealizedPL || 0),
+                pnlPercentage: (parseFloat(pos.unrealizedPL || 0) / parseFloat(pos.im || 1)) * 100 // Avoid division by zero
+            }));
+        } catch (error) {
+            console.error('Error fetching open positions:', error.message);
+            finalData.openPositions = [];
+        }
+
+        // --- 3. Fetch and Analyze Trade History ---
+        try {
+            const historyDealsResponse = await makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 });
+            if (!historyDealsResponse.success) throw new Error(historyDealsResponse.message || 'فشل في جلب سجل الصفقات.');
+            
+            const closedTrades = (historyDealsResponse.data?.resultList || [])
+                .filter(order => order.state === 3 && order.profit !== undefined) // Ensure order is filled and has a profit field
+                .map(order => ({
+                    symbol: order.symbol,
+                    pnl: parseFloat(order.profit),
+                    date: new Date(order.updateTime).toLocaleDateString('ar-EG')
+                }));
+            
+            closedTrades.sort((a, b) => b.pnl - a.pnl);
+            
+            finalData.bestTrades = closedTrades.slice(0, 3);
+            finalData.worstTrades = closedTrades.filter(t => t.pnl < 0).slice(-3).reverse();
+        } catch (error) {
+            console.error('Error fetching trade history:', error.message);
+            finalData.bestTrades = [];
+            finalData.worstTrades = [];
+        }
 
         // --- 4. Send the final compiled data ---
-        res.json({
-            totalBalance,
-            assetsValue,
-            assetsCount: assets.length,
-            openPositions,
-            bestTrades,
-            worstTrades
-        });
+        res.json(finalData);
 
     } catch (error) {
-        console.error('Backend Error:', error.message);
-        res.status(500).json({ error: `خطأ في الخادم: ${error.message}` });
+        console.error('A critical error occurred in the main route:', error.message);
+        res.status(500).json({ error: `خطأ حرج في الخادم: ${error.message}` });
     }
 });
+
 
 // --- Serve the HTML file for all other routes ---
 app.get('*', (req, res) => {
@@ -96,10 +105,10 @@ app.get('*', (req, res) => {
 async function makeRequest(endpoint, params = {}) {
     const timestamp = Date.now();
     const queryString = new URLSearchParams(params).toString();
-    const stringToSign = `${apiKey}${timestamp}${queryString ? `&${queryString}` : ''}`;
-    const signature = CryptoJS.HmacSHA256(stringToSign, secretKey).toString(CryptoJS.enc.Hex);
+    const toSign = `${apiKey}${timestamp}${queryString}`;
+    const signature = CryptoJS.HmacSHA256(toSign, secretKey).toString(CryptoJS.enc.Hex);
 
-    const url = `${API_BASE_URL}${endpoint}${queryString ? `?${queryString}` : ''}`;
+    const url = `${API_BASE_URL}${endpoint}?${queryString}`;
     
     const response = await fetch(url, {
         method: 'GET',
@@ -111,11 +120,14 @@ async function makeRequest(endpoint, params = {}) {
         }
     });
 
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `HTTP Error ${response.status}`);
+    // Check if the response is valid JSON
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.indexOf("application/json") !== -1) {
+        return response.json();
+    } else {
+        const text = await response.text();
+        throw new Error(`MEXC returned a non-JSON response: ${text}`);
     }
-    return response.json();
 }
 
 // --- Start the server ---
