@@ -21,48 +21,84 @@ app.use(express.static(__dirname));
 
 // --- Main API Route ---
 app.get('/api/portfolio-data', async (req, res) => {
-    console.log("==> New request received. Starting diagnostic...");
-
     if (!apiKey || !secretKey) {
-        console.error("Diagnostic FAIL: API keys are not configured on the server.");
         return res.status(500).json({ error: 'لم يتم إعداد مفاتيح API على الخادم بشكل صحيح.' });
     }
 
     try {
-        // --- STEP 1: ONLY Fetch Account Assets (Balance) ---
-        console.log("Diagnostic STEP 1: Attempting to fetch account assets...");
-        const accountAssetsResponse = await makeRequest('/api/v1/private/account/assets');
-        
-        if (!accountAssetsResponse.success || !accountAssetsResponse.data) {
-             console.error("Diagnostic FAIL at STEP 1: Invalid response from MEXC assets endpoint.", accountAssetsResponse);
-             throw new Error('فشل في جلب أصول المحفظة.');
+        // Fetch both account assets and open positions concurrently for better performance
+        const [accountAssetsResponse, openPositionsResponse, historyDealsResponse] = await Promise.all([
+            makeRequest('/api/v1/private/account/assets').catch(e => ({ success: false, error: e })),
+            makeRequest('/api/v1/private/position/open_positions').catch(e => ({ success: false, error: e })),
+            makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 }).catch(e => ({ success: false, error: e }))
+        ]);
+
+        // --- 1. Process Account Assets (Available Balance) ---
+        let availableBalance = 0;
+        let assetsCount = 0;
+        if (accountAssetsResponse.success && accountAssetsResponse.data) {
+            const assets = accountAssetsResponse.data;
+            availableBalance = assets.reduce((sum, asset) => sum + parseFloat(asset.availableBalance || 0), 0);
+            assetsCount = assets.length;
+        } else {
+            console.error('Error fetching account assets:', accountAssetsResponse.error?.message);
         }
+
+        // --- 2. Process Open Positions ---
+        let openPositions = [];
+        let totalMarginInPositions = 0;
+        if (openPositionsResponse.success && openPositionsResponse.data) {
+            totalMarginInPositions = openPositionsResponse.data.reduce((sum, pos) => sum + parseFloat(pos.im || 0), 0);
+            openPositions = openPositionsResponse.data.map(pos => ({
+                symbol: pos.symbol,
+                positionType: pos.positionType === 1 ? 'Long' : 'Short',
+                leverage: pos.leverage,
+                openPrice: parseFloat(pos.holdAvgPrice || 0),
+                currentPrice: parseFloat(pos.lastPrice || 0),
+                unrealizedPNL: parseFloat(pos.unrealizedPL || 0),
+                pnlPercentage: (parseFloat(pos.unrealizedPL || 0) / (parseFloat(pos.im) || 1)) * 100 // Avoid division by zero
+            }));
+        } else {
+            console.error('Error fetching open positions:', openPositionsResponse.error?.message);
+        }
+
+        // --- 3. Calculate TRUE Total Balance ---
+        const totalBalance = availableBalance + totalMarginInPositions;
         
-        console.log("Diagnostic SUCCESS at STEP 1: Successfully fetched account assets.");
-        const assets = accountAssetsResponse.data;
-        const totalBalance = assets.reduce((sum, asset) => sum + parseFloat(asset.im || 0), 0);
-        const assetsValue = assets.filter(a => a.currency !== 'USDT').reduce((sum, asset) => sum + parseFloat(asset.im || 0), 0);
-        const assetsCount = assets.length;
+        // --- 4. Process and Analyze Trade History ---
+        let bestTrades = [];
+        let worstTrades = [];
+        if (historyDealsResponse.success && historyDealsResponse.data?.resultList) {
+            const closedTrades = historyDealsResponse.data.resultList
+                .filter(order => order.state === 3 && order.profit !== undefined)
+                .map(order => ({
+                    symbol: order.symbol,
+                    pnl: parseFloat(order.profit),
+                    date: new Date(order.updateTime).toLocaleDate-string('ar-EG')
+                }));
+            
+            closedTrades.sort((a, b) => b.pnl - a.pnl);
+            bestTrades = closedTrades.slice(0, 3);
+            worstTrades = closedTrades.filter(t => t.pnl < 0).slice(-3).reverse();
+        } else {
+             console.error('Error fetching trade history:', historyDealsResponse.error?.message);
+        }
 
-        // --- All other steps are disabled for this test ---
-        console.log("Diagnostic COMPLETE: Sending simplified data to frontend.");
-
-        // --- Send only the balance data ---
+        // --- 5. Send the final compiled data ---
         res.json({
-            totalBalance,
-            assetsValue,
-            assetsCount,
-            openPositions: [], // Sending empty data for other sections
-            bestTrades: [],
-            worstTrades: []
+            totalBalance: totalBalance,
+            assetsValue: totalMarginInPositions, // We'll consider assets value as the margin in positions
+            assetsCount: assetsCount,
+            openPositions: openPositions,
+            bestTrades: bestTrades,
+            worstTrades: worstTrades
         });
 
     } catch (error) {
-        console.error('Diagnostic CRITICAL ERROR:', error.message);
-        res.status(500).json({ error: `خطأ في الخادم أثناء التشخيص: ${error.message}` });
+        console.error('A critical error occurred in the main route:', error.message);
+        res.status(500).json({ error: `خطأ حرج في الخادم: ${error.message}` });
     }
 });
-
 
 // --- Serve the HTML file for all other routes ---
 app.get('*', (req, res) => {
@@ -77,7 +113,6 @@ async function makeRequest(endpoint, params = {}) {
     const signature = CryptoJS.HmacSHA256(toSign, secretKey).toString(CryptoJS.enc.Hex);
 
     const url = `${API_BASE_URL}${endpoint}?${queryString}`;
-    console.log(`Making request to: ${endpoint}`); // Log which endpoint is being called
     
     const response = await fetch(url, {
         method: 'GET',
@@ -89,12 +124,16 @@ async function makeRequest(endpoint, params = {}) {
         }
     });
 
-    const textResponse = await response.text(); // Read response as text first
-    try {
-        return JSON.parse(textResponse); // Try to parse as JSON
-    } catch (e) {
-        console.error("Failed to parse JSON from MEXC:", textResponse);
-        throw new Error(`MEXC returned a non-JSON response: ${textResponse}`);
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.indexOf("application/json") !== -1) {
+        const jsonResponse = await response.json();
+        if (jsonResponse.code !== 0) { // MEXC specific error code check
+             throw new Error(`MEXC API Error (${jsonResponse.code}): ${jsonResponse.msg}`);
+        }
+        return jsonResponse;
+    } else {
+        const text = await response.text();
+        throw new Error(`MEXC returned a non-JSON response: ${text}`);
     }
 }
 
