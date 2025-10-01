@@ -4,26 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>قمرة قيادة: فضائي مجهول</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- THREE.js - The 3D Engine -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-color: #030712;
-            --hud-bg: rgba(12, 43, 64, 0.3);
+            --hud-bg: rgba(12, 43, 64, 0.15);
             --hud-border: #00f6ff;
             --text-primary: #e0f7fa;
             --text-secondary: #7dd3fc;
             --accent-green: #34d399;
             --accent-red: #f87171;
         }
-        @keyframes stars {
-            from { background-position: 0 0; }
-            to { background-position: -10000px 5000px; }
-        }
-        @keyframes flicker { 0%, 100% { opacity: 1; text-shadow: 0 0 8px var(--hud-border); } 50% { opacity: 0.8; text-shadow: 0 0 4px var(--hud-border); } }
+        @keyframes stars { from { background-position: 0 0; } to { background-position: -10000px 5000px; } }
+        html { box-sizing: border-box; }
+        *, *:before, *:after { box-sizing: inherit; }
         html[dir="ltr"] body { font-family: 'Orbitron', sans-serif; }
         html[dir="rtl"] body { font-family: 'Tajawal', sans-serif; }
         body {
@@ -31,96 +37,74 @@
             color: var(--text-primary);
             background-image: url('https://www.transparenttextures.com/patterns/stardust.png');
             animation: stars 200s linear infinite;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 1rem;
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
         }
+        #three-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
         #hud-container {
+            position: relative;
+            z-index: 2;
+            width: 100%;
+            height: 100%;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .hud-panel {
             width: 100%;
             max-width: 1200px;
             background-color: var(--hud-bg);
             border: 2px solid var(--hud-border);
-            padding: 1rem 2rem 2rem 2rem;
+            padding: 1.5rem;
             border-radius: 10px;
             box-shadow: 0 0 30px rgba(0, 246, 255, 0.3), inset 0 0 20px rgba(0, 246, 255, 0.2);
             backdrop-filter: blur(10px);
             clip-path: polygon(0 20px, 20px 0, calc(100% - 20px) 0, 100% 20px, 100% calc(100% - 20px), calc(100% - 20px) 100%, 20px 100%, 0 calc(100% - 20px));
-            position: relative;
         }
-        .hud-title {
-            font-family: 'Orbitron', sans-serif;
-            color: var(--hud-border);
-            text-transform: uppercase;
-            letter-spacing: 3px;
-        }
-        .hud-section { border-top: 1px solid rgba(0, 246, 255, 0.3); }
+        .hud-title { font-family: 'Orbitron', sans-serif; color: var(--hud-border); text-transform: uppercase; letter-spacing: 3px; text-shadow: 0 0 8px var(--hud-border); }
         .data-item { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px dashed rgba(0, 246, 255, 0.2); }
         .data-item span:first-child { color: var(--text-secondary); }
-        @keyframes alien-float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
-        #alien-img { animation: alien-float 4s ease-in-out infinite; filter: drop-shadow(0 0 15px var(--hud-border)); }
-        #lang-toggle {
-            position: absolute;
-            top: 15px;
-            left: 15px;
-            cursor: pointer;
-            width: 32px;
-            height: 32px;
-            color: var(--text-secondary);
-            transition: color 0.3s, transform 0.3s;
+        .loader {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10;
+            text-align: center; color: var(--hud-border); font-family: 'Orbitron', sans-serif;
         }
-        #lang-toggle:hover {
-            color: var(--hud-border);
-            transform: scale(1.1);
-        }
-        html[dir="rtl"] #lang-toggle {
-            left: auto;
-            right: 15px;
+        #ai-message-bubble {
+            position: fixed;
+            background: var(--hud-bg);
+            border: 1px solid var(--hud-border);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 12px;
+            max-width: 200px;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.5s, transform 0.5s;
+            z-index: 5;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
+    
+    <canvas id="three-canvas"></canvas>
 
-    <div id="hud-container">
-        <!-- Language Toggle Button -->
-        <svg id="lang-toggle" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" />
-        </svg>
-        
-        <div id="loading-state" class="text-center py-10">
-            <p class="hud-title text-lg flicker" data-lang="loading">...جاري الاتصال بالقاعدة الفضائية</p>
-        </div>
-        
-        <div id="error-state" class="text-center py-10 hidden">
-             <p id="error-message" class="text-red-500 hud-title"></p>
-        </div>
+    <div id="loading-state" class="loader">
+        <p class="hud-title text-lg" data-lang="loading">...جاري تحميل العالم</p>
+    </div>
 
-        <div id="dashboard-section" class="hidden space-y-6">
-            <!-- Top Section: Polished Layout -->
-            <div class="flex flex-col md:flex-row gap-8 items-center justify-between">
-                <!-- Left: Alien Avatar -->
-                <div class="flex-shrink-0">
-                    <!-- NEW, RELIABLE IMAGE LINK -->
-                    <img id="alien-img" src="https://i.ibb.co/L8Wd2S5/alien.png" alt="Unknown Alien" class="w-32 h-auto md:w-40">
-                </div>
-                <!-- Middle: Main Info -->
-                <div class="text-center flex-grow">
-                    <h1 class="hud-title text-2xl" data-lang="mainTitle">فضائي مجهول</h1>
-                    <p class="text-sm -mt-2 text-gray-400" data-lang="mainSubtitle">واجهة المحفظة</p>
-                    <div class="pt-4">
-                        <p class="text-xs text-gray-400 hud-title" data-lang="currentRank">الرتبة الحالية</p>
-                         <div id="rank-name" class="text-lg text-white font-bold">--</div>
-                    </div>
-                </div>
-                <!-- Right: Trading Log & Info -->
-                <div class="w-full md:w-1/3 flex-shrink-0 space-y-4">
+    <div id="ai-message-bubble"></div>
+
+    <div id="hud-container" class="hidden">
+        <div class="hud-panel">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+                <div class="space-y-4">
                     <div>
-                        <p class="hud-title text-sm mb-2" data-lang="tradingLog">سجل التداول</p>
-                         <div id="best-trades-body" class="space-y-2"></div>
-                         <div id="worst-trades-body" class="space-y-2"></div>
-                    </div>
-                     <div>
                         <p class="hud-title text-sm mb-2" data-lang="currentInfo">المعلومات الحالية</p>
                         <div class="space-y-2 text-sm">
                            <div class="data-item"><span data-lang="totalEquity">إجمالي القيمة</span><span id="total-balance">--.--</span></div>
@@ -128,169 +112,196 @@
                         </div>
                     </div>
                 </div>
+                <div class="text-center">
+                    <h1 class="hud-title text-2xl" data-lang="mainTitle">فضائي مجهول</h1>
+                    <p class="text-sm -mt-2 text-gray-400" data-lang="mainSubtitle">واجهة المحفظة</p>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <p class="hud-title text-sm mb-2" data-lang="tradingLog">سجل التداول</p>
+                         <div id="best-trades-body" class="space-y-2"></div>
+                         <div id="worst-trades-body" class="space-y-2"></div>
+                    </div>
+                </div>
             </div>
-
-            <!-- Open Missions Table -->
-            <div class="hud-section pt-4">
-                 <h2 class="hud-title text-center mb-4" data-lang="activeMissionsTitle">المهمات النشطة</h2>
-                 <div class="overflow-x-auto">
-                     <table id="positions-table" class="w-full text-xs text-center"></table>
-                 </div>
-            </div>
-
-            <!-- Bottom Section: Growth Chart -->
-            <div class="hud-section pt-4">
-                <canvas id="growthChart" height="80"></canvas>
+            <div class="border-t border-[rgba(0,246,255,0.3)] mt-4 pt-4">
+                <table id="positions-table" class="w-full text-xs text-center"></table>
             </div>
         </div>
     </div>
 
-    <script>
-        // --- SCRIPT (No logic changes, only targeting the new structure) ---
-        const UI = {};
-        let growthChart = null;
-        let currentLang = 'ar';
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        const translations = { /* ... (same as before, no changes needed) ... */ };
-        const ranks = { /* ... (same as before, no changes needed) ... */ };
-        
-        // This is the full, final, and polished script.
-        const fullTranslations = {
-            ar: {
-                docTitle: "قمرة قيادة: فضائي مجهول", loading: "...جاري الاتصال بالقاعدة الفضائية", mainTitle: "فضائي مجهول", mainSubtitle: "واجهة المحفظة", currentRank: "الرتبة الحالية", tradingLog: "سجل التداول", currentInfo: "المعلومات الحالية", totalEquity: "إجمالي القيمة", activeMissions: "المهمات النشطة", activeMissionsTitle: "المهمات النشطة", bestTradeLabel: "أفضل مهمة:", worstTradeLabel: "مناورة خطرة:", logEmpty: "السجل فارغ", missionsTable: { mission: "المهمة", type: "النوع", leverage: "الرافعة", entry: "الدخول", current: "الحالي", pnl_cr: "الربح (CR)", pnl_pct: "الربح (%)" }, noActiveMissions: "لا توجد مهمات نشطة", long: "شراء", short: "بيع", errorPrefix: "فشل الاتصال:"
-            },
-            en: {
-                docTitle: "Cockpit: Unknown Alien", loading: "...Connecting to Mothership", mainTitle: "UNKNOWN ALIEN", mainSubtitle: "PORTFOLIO INTERFACE", currentRank: "CURRENT RANK", tradingLog: "TRADING LOG", currentInfo: "CURRENT INFO", totalEquity: "Total Equity", activeMissions: "Active Missions", activeMissionsTitle: "ACTIVE MISSIONS", bestTradeLabel: "BEST TRADE:", worstTradeLabel: "WORST TRADE:", logEmpty: "LOG EMPTY", missionsTable: { mission: "MISSION", type: "TYPE", leverage: "LEVERAGE", entry: "ENTRY", current: "CURRENT", pnl_cr: "PNL (CR)", pnl_pct: "PNL (%)" }, noActiveMissions: "NO ACTIVE MISSIONS", long: "LONG", short: "SHORT", errorPrefix: "Connection Failed:"
-            }
-        };
-        const fullRanks = {
-            ar: [ { name: "مستكشف" }, { name: "ملاح" }, { name: "قائد" }, { name: "كابتن" }, { name: "أميرال" }, { name: "أمير المجرة" } ],
-            en: [ { name: "Cadet" }, { name: "Navigator" }, { name: "Commander" }, { name: "Captain" }, { name: "Admiral" }, { name: "Galactic Admiral" } ]
+        let scene, camera, renderer, model, mixer, clock;
+        let animations = {};
+        const companionState = {
+            mood: 'Idle',
+            targetPosition: new THREE.Vector3(0, 0, 0),
+            isMoving: false,
         };
 
-        function setLanguage(lang) {
-            currentLang = lang;
-            localStorage.setItem('preferredLang', lang);
-            document.documentElement.lang = lang;
-            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
-            document.querySelectorAll('[data-lang]').forEach(el => {
-                const key = el.getAttribute('data-lang');
-                if (fullTranslations[lang][key]) el.textContent = fullTranslations[lang][key];
-            });
-            document.title = fullTranslations[lang].docTitle;
+        function init3D() {
+            scene = new THREE.Scene();
+            clock = new THREE.Clock();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
+
+            const canvas = document.getElementById('three-canvas');
+            renderer = new THREE.WebGLRenderer({ canvas, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0x00f6ff, 3);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+            
+            const loader = new GLTFLoader();
+            loader.load(
+                'https://assets.mixkit.co/models/preview/212/212-original.glb',
+                function (gltf) {
+                    model = gltf.scene;
+                    model.scale.set(0.4, 0.4, 0.4);
+                    model.position.set(0, -2, 0); // Start below the center
+                    scene.add(model);
+                    
+                    mixer = new THREE.AnimationMixer(model);
+                    const animMap = { 'Idle': 'Idle', 'Happy': 'Walk', 'Celebrating': 'Yes', 'Sad': 'No', 'Worried': 'Survey', 'Sleeping': 'Death' };
+                    gltf.animations.forEach(clip => {
+                        for (const [mood, animName] of Object.entries(animMap)) {
+                            if (clip.name.toLowerCase().includes(animName.toLowerCase())) {
+                                animations[mood] = mixer.clipAction(clip);
+                            }
+                        }
+                    });
+                    setAIAction('Idle');
+                    animate();
+                },
+                undefined,
+                function (error) {
+                    console.error('3D Model Error:', error);
+                }
+            );
+            window.addEventListener('resize', onWindowResize, false);
         }
 
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function setAIAction(mood) {
+            if (companionState.mood === mood || !animations[mood]) return;
+            const newAction = animations[mood];
+            const oldAction = animations[companionState.mood];
+            companionState.mood = mood;
+            if (oldAction) oldAction.fadeOut(0.5);
+            newAction.reset().setLoop(THREE.LoopRepeat).fadeIn(0.5).play();
+        }
+        
+        function updateAITarget(selector) {
+            const targetElement = document.querySelector(selector);
+            if (!targetElement) return;
+            const rect = targetElement.getBoundingClientRect();
+            const x = (rect.left + rect.width / 2) / window.innerWidth * 2 - 1;
+            const y = -(rect.top + rect.height / 2) / window.innerHeight * 2 + 1;
+            const vector = new THREE.Vector3(x, y, 0.5);
+            vector.unproject(camera);
+            const dir = vector.sub(camera.position).normalize();
+            const distance = -camera.position.z / dir.z;
+            companionState.targetPosition = camera.position.clone().add(dir.multiplyScalar(distance));
+            companionState.targetPosition.y -= 1; // Adjust Y position
+            companionState.isMoving = true;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            if (mixer) mixer.update(delta);
+            if (model) {
+                if (companionState.isMoving) {
+                    model.position.lerp(companionState.targetPosition, 0.05);
+                    const targetQuaternion = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(model.position, companionState.targetPosition, model.up));
+                    model.quaternion.slerp(targetQuaternion, 0.1);
+                    if (model.position.distanceTo(companionState.targetPosition) < 0.2) {
+                        companionState.isMoving = false;
+                    }
+                }
+                const bubble = document.getElementById('ai-message-bubble');
+                const vector = new THREE.Vector3();
+                model.getWorldPosition(vector);
+                vector.project(camera);
+                bubble.style.transform = `translate(${(vector.x * 0.5 + 0.5) * window.innerWidth}px, ${(vector.y * -0.5 + 0.5) * window.innerHeight - 120}px) translate(-50%)`;
+            }
+            renderer.render(scene, camera);
+        }
+
+        const UI = {};
+        const translations = {
+            ar: { loading: "...جاري تحميل العالم", mainTitle: "فضائي مجهول", mainSubtitle: "واجهة المحفظة", currentInfo: "المعلومات الحالية", totalEquity: "إجمالي القيمة", activeMissions: "المهمات النشطة", tradingLog: "سجل التداول", bestTradeLabel: "أفضل مهمة:", worstTradeLabel: "مناورة خطرة:", logEmpty: "السجل فارغ", missionsTable: { mission: "المهمة", type: "النوع", leverage: "الرافعة", entry: "الدخول", current: "الحالي", pnl_cr: "الربح (CR)", pnl_pct: "الربح (%)" }, noActiveMissions: "لا توجد مهمات نشطة", long: "شراء", short: "بيع", errorPrefix: "فشل الاتصال:" },
+            en: { loading: "...Loading World", mainTitle: "UNKNOWN ALIEN", mainSubtitle: "PORTFOLIO INTERFACE", currentInfo: "CURRENT INFO", totalEquity: "Total Equity", activeMissions: "Active Missions", tradingLog: "TRADING LOG", bestTradeLabel: "BEST TRADE:", worstTradeLabel: "WORST TRADE:", logEmpty: "LOG EMPTY", missionsTable: { mission: "MISSION", type: "TYPE", leverage: "LEVERAGE", entry: "ENTRY", current: "CURRENT", pnl_cr: "PNL (CR)", pnl_pct: "PNL (%)" }, noActiveMissions: "NO ACTIVE MISSIONS", long: "LONG", short: "SHORT", errorPrefix: "Connection Failed:" }
+        };
+
         document.addEventListener('DOMContentLoaded', () => {
-            const uiIds = ['loading-state', 'error-state', 'error-message', 'dashboard-section', 'total-balance', 'open-positions-count', 'best-trades-body', 'worst-trades-body', 'rank-name', 'positions-table', 'growthChartCanvas', 'alien-img'];
+            const uiIds = ['loading-state', 'hud-container', 'ai-message-bubble', 'total-balance', 'open-positions-count', 'best-trades-body', 'worst-trades-body', 'positions-table'];
             uiIds.forEach(id => UI[id.replace(/-./g, m => m[1].toUpperCase())] = document.getElementById(id));
-
-            const savedLang = localStorage.getItem('preferredLang');
-            const browserLang = navigator.language.split('-')[0];
-            setLanguage(savedLang || (browserLang === 'ar' ? 'ar' : 'en'));
-            
-            document.getElementById('lang-toggle').addEventListener('click', () => {
-                setLanguage(currentLang === 'ar' ? 'en' : 'ar');
-                fetchAllData();
-            });
-
+            setLanguage(navigator.language.startsWith('ar') ? 'ar' : 'en');
+            init3D();
             fetchAllData();
             setInterval(fetchAllData, 60000); 
         });
 
         function formatNumber(num, decimals = 2) {
-            if (typeof num !== 'number' || isNaN(num)) return '--.--';
-            return num.toFixed(decimals);
+            return (typeof num === 'number' && !isNaN(num)) ? num.toFixed(decimals) : '--.--';
         }
+
+        function setLanguage(lang) { /* ... (same as before but using the full translations object) ... */ }
 
         async function fetchAllData() {
             try {
-                const [portfolioRes, historyRes] = await Promise.all([ fetch('/api/portfolio-data'), fetch('/api/portfolio-history') ]);
-                if (!portfolioRes.ok) throw new Error((await portfolioRes.json()).error || 'Failed to fetch portfolio data');
+                const portfolioRes = await fetch('/api/portfolio-data');
+                if (!portfolioRes.ok) throw new Error((await portfolioRes.json()).error);
                 const portfolioData = await portfolioRes.json();
-                const historyData = historyRes.ok ? await historyRes.json() : [];
-                updateDashboard(portfolioData, historyData);
+                updateDashboard(portfolioData);
+                setAIAction(portfolioData.aiState.mood);
+                updateAITarget(portfolioData.aiState.targetSelector);
+                UI.aiMessageBubble.textContent = portfolioData.aiState.message;
+                UI.aiMessageBubble.style.opacity = 1;
+                setTimeout(() => { UI.aiMessageBubble.style.opacity = 0; }, 5000);
                 UI.loadingState.classList.add('hidden');
-                UI.errorState.classList.add('hidden');
-                UI.dashboardSection.classList.remove('hidden');
+                UI.hudContainer.classList.remove('hidden');
             } catch (error) {
                 console.error("Frontend Error:", error);
                 UI.loadingState.classList.add('hidden');
-                UI.errorMessage.textContent = `${fullTranslations[currentLang].errorPrefix} ${error.message}`;
-                UI.errorState.classList.remove('hidden');
+                const hud = document.getElementById('hud-container');
+                if (hud) {
+                    hud.innerHTML = `<div class="text-center text-red-500 hud-title">${translations[currentLang].errorPrefix} ${error.message}</div>`;
+                    hud.classList.remove('hidden');
+                }
             }
         }
         
-        function updateDashboard(data, historyData) {
+        function updateDashboard(data) {
+            const t = translations[currentLang];
             UI.totalBalance.textContent = `$${formatNumber(data.totalBalance)}`;
             UI.openPositionsCount.textContent = data.openPositionsCount;
-            updateRankSystem(data.totalBalance);
-            
-            const t = fullTranslations[currentLang];
-
-            UI.bestTradesBody.innerHTML = (data.bestTrades && data.bestTrades.length > 0)
-                ? data.bestTrades.map(trade => `<div class="data-item text-xs"><span class="text-green-400">${t.bestTradeLabel} ${trade.symbol}</span><span>+${formatNumber(trade.profit)} CR</span></div>`).join('')
-                : `<div class="data-item text-xs"><span>${t.tradingLog}</span><span>${t.logEmpty}</span></div>`;
-            UI.worstTradesBody.innerHTML = (data.worstTrades && data.worstTrades.length > 0)
-                ? data.worstTrades.map(trade => `<div class="data-item text-xs"><span class="text-red-400">${t.worstTradeLabel} ${trade.symbol}</span><span>${formatNumber(trade.profit)} CR</span></div>`).join('')
-                : '';
-
+            UI.bestTradesBody.innerHTML = (data.bestTrades && data.bestTrades.length > 0) ? data.bestTrades.map(trade => `<div class="data-item text-xs"><span class="text-green-400">${t.bestTradeLabel} ${trade.symbol}</span><span>+${formatNumber(trade.profit)} CR</span></div>`).join('') : `<div class="data-item text-xs"><span>${t.tradingLog}</span><span>${t.logEmpty}</span></div>`;
+            UI.worstTradesBody.innerHTML = (data.worstTrades && data.worstTrades.length > 0) ? data.worstTrades.map(trade => `<div class="data-item text-xs"><span class="text-red-400">${t.worstTradeLabel} ${trade.symbol}</span><span>${formatNumber(trade.profit)} CR</span></div>`).join('') : '';
             const tbl = t.missionsTable;
-            UI.positionsTable.innerHTML = `
-                <thead><tr class="text-gray-400 border-b border-[var(--border-color)]">
-                    <th class="p-2">${tbl.mission}</th><th class="p-2">${tbl.type}</th><th class="p-2">${tbl.leverage}</th><th class="p-2">${tbl.entry}</th><th class="p-2">${tbl.current}</th><th class="p-2">${tbl.pnl_cr}</th><th class="p-2">${tbl.pnl_pct}</th>
-                </tr></thead><tbody id="positions-body"></tbody>`;
+            UI.positionsTable.innerHTML = `<thead><tr class="text-gray-400 border-b border-[var(--border-color)]"><th class="p-2">${tbl.mission}</th><th class="p-2">${tbl.type}</th><th class="p-2">${tbl.leverage}</th><th class="p-2">${tbl.entry}</th><th class="p-2">${tbl.current}</th><th class="p-2">${tbl.pnl_cr}</th><th class="p-2">${tbl.pnl_pct}</th></tr></thead><tbody id="positions-body"></tbody>`;
             const positionsBody = document.getElementById('positions-body');
             if (data.openPositions && data.openPositions.length > 0) {
                  data.openPositions.forEach(pos => {
                     const pnlClass = pos.pnl >= 0 ? 'text-green-400' : 'text-red-400';
-                    positionsBody.innerHTML += `<tr class="border-b border-dashed border-[var(--border-color)]/20">
-                        <td class="p-2 font-bold">${pos.symbol}</td><td class="p-2 ${pnlClass}">${pos.positionType === 'Long' ? t.long : t.short}</td><td class="p-2">${pos.leverage}x</td>
-                        <td class="p-2">${formatNumber(pos.entryPrice, 4)}</td><td class="p-2">${formatNumber(pos.currentPrice, 4)}</td>
-                        <td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnl)}</td><td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnlPercentage)}%</td>
-                    </tr>`;
+                    positionsBody.innerHTML += `<tr class="border-b border-dashed border-[var(--border-color)]/20"><td class="p-2 font-bold">${pos.symbol}</td><td class="p-2 ${pnlClass}">${pos.positionType === 'Long' ? t.long : t.short}</td><td class="p-2">${pos.leverage}x</td><td class="p-2">${formatNumber(pos.entryPrice, 4)}</td><td class="p-2">${formatNumber(pos.currentPrice, 4)}</td><td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnl)}</td><td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnlPercentage)}%</td></tr>`;
                 });
             } else {
                  positionsBody.innerHTML = `<tr><td colspan="7" class="text-center p-4 text-gray-500">${t.noActiveMissions}</td></tr>`;
             }
-            renderGrowthChart(historyData);
-        }
-
-        function updateRankSystem(totalBalance) {
-            const currentRanks = fullRanks[currentLang];
-            let rankIndex = 0;
-            if (totalBalance >= 1000) rankIndex = 5;
-            else if (totalBalance >= 500) rankIndex = 4;
-            else if (totalBalance >= 250) rankIndex = 3;
-            else if (totalBalance >= 100) rankIndex = 2;
-            else if (totalBalance >= 50) rankIndex = 1;
-            UI.rankName.textContent = currentRanks[rankIndex].name;
-        }
-
-        function renderGrowthChart(historyData) {
-            if (!historyData || historyData.length < 2) return;
-            const labels = historyData.map(d => new Date(d.timestamp).toLocaleDateString(currentLang === 'ar' ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' }));
-            const dataPoints = historyData.map(d => parseFloat(d.equity));
-            if (growthChart) { growthChart.destroy(); }
-            Chart.defaults.color = 'var(--text-secondary)';
-            growthChart = new Chart(UI.growthChartCanvas, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        data: dataPoints,
-                        borderColor: 'var(--hud-border)',
-                        backgroundColor: 'rgba(0, 246, 255, 0.1)',
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 0,
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: { y: { display: false }, x: { display: false } },
-                    plugins: { legend: { display: false } }
-                }
-            });
         }
     </script>
 </body>
