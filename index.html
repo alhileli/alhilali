@@ -10,158 +10,122 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        /* --- [ THEME & STYLING ] --- */
         :root {
-            --bg-primary: #0a0e17;
-            --bg-secondary: #101623;
-            --border-color: #2a3149;
-            --text-primary: #d1d8e0;
-            --text-secondary: #8791a1;
-            --accent-cyan: #00f6ff;
-            --accent-magenta: #ff00c1;
-            --accent-green: #00ff9c;
-            --accent-red: #ff3864;
+            --bg-color: #030712;
+            --hud-bg: rgba(12, 43, 64, 0.3);
+            --hud-border: #00f6ff;
+            --text-primary: #e0f7fa;
+            --text-secondary: #7dd3fc;
+            --accent-green: #34d399;
+            --accent-red: #f87171;
         }
-        body { 
-            font-family: 'Tajawal', sans-serif; 
-            background-color: var(--bg-primary); 
+        @keyframes stars {
+            from { background-position: 0 0; }
+            to { background-position: -10000px 5000px; }
+        }
+        @keyframes flicker { 0%, 100% { opacity: 1; text-shadow: 0 0 8px var(--hud-border); } 50% { opacity: 0.8; text-shadow: 0 0 4px var(--hud-border); } }
+        body {
+            font-family: 'Tajawal', sans-serif;
+            background-color: var(--bg-color);
             color: var(--text-primary);
-            background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0);
-            background-size: 25px 25px;
+            background-image: url('https://www.transparenttextures.com/patterns/stardust.png');
+            animation: stars 200s linear infinite;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1rem;
         }
-        .hud-card {
-            background-color: rgba(16, 22, 35, 0.8);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            backdrop-filter: blur(5px);
-            position: relative;
-            box-shadow: 0 0 15px rgba(0, 246, 255, 0.1);
+        #hud-container {
+            width: 100%;
+            max-width: 1200px;
+            background-color: var(--hud-bg);
+            border: 2px solid var(--hud-border);
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 0 30px rgba(0, 246, 255, 0.3), inset 0 0 20px rgba(0, 246, 255, 0.2);
+            backdrop-filter: blur(10px);
+            clip-path: polygon(0 20px, 20px 0, calc(100% - 20px) 0, 100% 20px, 100% calc(100% - 20px), calc(100% - 20px) 100%, 20px 100%, 0 calc(100% - 20px));
         }
         .hud-title {
             font-family: 'Orbitron', sans-serif;
-            color: var(--accent-cyan);
-            text-shadow: 0 0 5px var(--accent-cyan);
+            color: var(--hud-border);
+            text-transform: uppercase;
+            letter-spacing: 3px;
         }
-        .positive { color: var(--accent-green); }
-        .negative { color: var(--accent-red); }
-        .loader { /* A more futuristic loader */
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            border: 2px solid var(--border-color);
-            border-top-color: var(--accent-cyan);
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        /* Progress Bar for XP */
-        .xp-bar-bg { background-color: #22293b; }
-        .xp-bar-fill { 
-            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-magenta)); 
-            transition: width 0.7s ease-in-out;
-            box-shadow: 0 0 10px var(--accent-cyan);
-        }
-        /* Flickering animation for text */
-        .flicker { animation: flicker-animation 3s infinite; }
-        @keyframes flicker-animation{ 0% { opacity:1; } 50% { opacity:0.8; } 100% { opacity:1; } }
+        .hud-section { border-top: 1px solid rgba(0, 246, 255, 0.3); }
+        .data-item { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px dashed rgba(0, 246, 255, 0.2); }
+        .data-item span:first-child { color: var(--text-secondary); }
+        @keyframes alien-float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
+        #alien-img { animation: alien-float 4s ease-in-out infinite; filter: drop-shadow(0 0 15px var(--hud-border)); }
     </style>
 </head>
-<body class="p-4 md:p-8">
+<body>
 
-    <div id="app" class="max-w-7xl mx-auto space-y-8">
-        
-        <header class="flex flex-col items-center text-center space-y-4 my-8">
-            <!-- Anonymous Astronaut Icon -->
-            <svg class="w-24 h-24 text-cyan-400" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="0.5">
-                <path d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2Z" stroke-opacity="0.3"></path>
-                <path d="M5 12C5 8.13401 8.13401 5 12 5C15.866 5 19 8.13401 19 12" stroke-opacity="0.8"></path>
-                <rect x="7" y="11" width="10" height="6" rx="1" fill="currentColor" fill-opacity="0.2" stroke-opacity="0.5"></rect>
-                <line x1="12" y1="11" x2="12" y2="17" stroke-opacity="0.3"></line>
-            </svg>
-            <h1 class="text-4xl md:text-5xl font-bold hud-title tracking-widest flicker">فضائي مجهول</h1>
-            <p class="text-gray-400">قمرة قيادة رحلة التداول الخاصة بي</p>
-        </header>
-
+    <div id="hud-container">
         <div id="loading-state" class="text-center py-10">
-            <div class="loader mx-auto"></div>
-            <p class="mt-4 text-gray-400 hud-title text-sm">...جاري فحص أنظمة السفينة</p>
+            <p class="hud-title text-lg flicker">...جاري الاتصال بالقاعدة الفضائية</p>
+        </div>
+        
+        <div id="error-state" class="text-center py-10 hidden">
+             <p id="error-message" class="text-red-500 hud-title">...فشل الاتصال</p>
         </div>
 
-        <div id="error-state" class="hud-card p-6 text-center hidden">
-             <p id="error-message" class="text-red-400"></p>
-        </div>
-
-        <div id="dashboard-section" class="hidden space-y-12">
-            
-            <!-- Rank & XP System -->
-            <div class="hud-card p-6">
-                <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div class="text-center md:text-right">
-                        <p class="text-gray-400 text-sm">الرتبة الحالية</p>
-                        <p id="rank-name" class="text-2xl font-bold hud-title">مستكشف</p>
-                    </div>
-                    <div class="w-full md:w-2/3">
-                        <div class="flex justify-between items-center text-xs text-gray-400 mb-1">
-                            <span id="xp-current">XP 0</span>
-                            <span id="xp-next">XP 100</span>
-                        </div>
-                        <div class="w-full xp-bar-bg rounded-full h-3">
-                            <div id="xp-bar" class="xp-bar-fill h-3 rounded-full" style="width: 0%"></div>
-                        </div>
+        <div id="dashboard-section" class="hidden space-y-6">
+            <!-- Top Section: Alien, Info, Log -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+                <!-- Left: Alien Avatar -->
+                <div class="flex justify-center items-center">
+                    <img id="alien-img" src="https://i.imgur.com/gCe4m2t.png" alt="Unknown Alien" class="w-40 h-auto">
+                </div>
+                <!-- Middle: Main Info -->
+                <div class="text-center space-y-4">
+                    <h1 class="hud-title text-2xl">UNKNOWN ALIEN</h1>
+                    <p class="text-sm -mt-2 text-gray-400">PORTFOLIO INTERFACE</p>
+                    <div class="pt-2">
+                        <p class="text-xs text-gray-400 hud-title">JOURNEY PROGRESS</p>
+                         <div id="rank-name" class="text-lg text-white font-bold">--</div>
                     </div>
                 </div>
-            </div>
-
-            <!-- Main Data Screens -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-                <div class="hud-card p-6 text-center"><p class="text-gray-400">قيمة المحفظة (USDT)</p><p id="total-balance" class="text-3xl font-bold text-white mt-2">--.--</p></div>
-                <div class="hud-card p-6 text-center"><p class="text-gray-400">الهامش المستخدم (USDT)</p><p id="assets-value" class="text-3xl font-bold text-white mt-2">--.--</p></div>
-                <div class="hud-card p-6 text-center"><p class="text-gray-400">عدد المهمات النشطة</p><p id="open-positions-count" class="text-3xl font-bold mt-2">--</p></div>
-            </div>
-
-            <!-- Star Chart (Growth Chart) -->
-            <div class="hud-card p-6">
-                <h2 class="text-xl font-bold hud-title mb-4">خريطة النجوم</h2>
-                <canvas id="growthChart"></canvas>
-            </div>
-
-            <!-- Active Missions (Open Positions) -->
-            <div>
-                <h2 class="text-2xl font-bold hud-title mb-4">المهمات النشطة</h2>
-                <div class="hud-card overflow-x-auto">
-                    <table id="positions-table" class="w-full text-right"></table>
+                <!-- Right: Trading Log -->
+                <div class="space-y-4">
+                    <div>
+                        <p class="hud-title text-sm mb-2">TRADING LOG</p>
+                         <div id="best-trades-body" class="space-y-2"></div>
+                         <div id="worst-trades-body" class="space-y-2"></div>
+                    </div>
+                     <div>
+                        <p class="hud-title text-sm mb-2">CURRENT INFO</p>
+                        <div class="space-y-2 text-sm">
+                           <div class="data-item"><span>Total Equity</span><span id="total-balance">--.--</span></div>
+                           <div class="data-item"><span>Active Missions</span><span id="open-positions-count">--</span></div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Captain's Log (Historical Trades) -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                    <h2 class="text-2xl font-bold text-green-400 mb-4 text-center hud-title">أنجح المهمات</h2>
-                    <div id="best-trades-body" class="space-y-3"></div>
-                </div>
-                 <div>
-                    <h2 class="text-2xl font-bold text-red-400 mb-4 text-center hud-title">مناورات خطرة</h2>
-                    <div id="worst-trades-body" class="space-y-3"></div>
-                </div>
+            <!-- Open Missions Table -->
+            <div class="hud-section pt-4">
+                 <h2 class="hud-title text-center mb-4">ACTIVE MISSIONS</h2>
+                 <div class="overflow-x-auto">
+                     <table id="positions-table" class="w-full text-xs text-center"></table>
+                 </div>
+            </div>
+
+            <!-- Bottom Section: Growth Chart -->
+            <div class="hud-section pt-4">
+                <canvas id="growthChart" height="80"></canvas>
             </div>
         </div>
-         <footer class="text-center text-gray-500 text-sm pt-4">
-            يتم تحديث إشارة البث كل دقيقة.
-        </footer>
     </div>
 
     <script>
         const UI = {
-            loadingState: document.getElementById('loading-state'), errorState: document.getElementById('error-state'), errorMessage: document.getElementById('error-message'), dashboardSection: document.getElementById('dashboard-section'), totalBalanceElem: document.getElementById('total-balance'), assetsValueElem: document.getElementById('assets-value'), openPositionsCountElem: document.getElementById('open-positions-count'), positionsTable: document.getElementById('positions-table'), bestTradesBody: document.getElementById('best-trades-body'), worstTradesBody: document.getElementById('worst-trades-body'), rankName: document.getElementById('rank-name'), xpCurrent: document.getElementById('xp-current'), xpNext: document.getElementById('xp-next'), xpBar: document.getElementById('xp-bar'), growthChartCanvas: document.getElementById('growthChart')
+            loadingState: document.getElementById('loading-state'), errorState: document.getElementById('error-state'), errorMessage: document.getElementById('error-message'), dashboardSection: document.getElementById('dashboard-section'), totalBalance: document.getElementById('total-balance'), openPositionsCount: document.getElementById('open-positions-count'), bestTradesBody: document.getElementById('best-trades-body'), worstTradesBody: document.getElementById('worst-trades-body'), rankName: document.getElementById('rank-name'), positionsTable: document.getElementById('positions-table'), growthChartCanvas: document.getElementById('growthChart')
         };
         
         const ranks = [
-            { level: 0, name: "مستكشف | Cadet", xp_required: 0 },
-            { level: 1, name: "ملاح | Navigator", xp_required: 100 },
-            { level: 2, name: "قائد | Commander", xp_required: 500 },
-            { level: 3, name: "كابتن | Captain", xp_required: 1000 },
-            { level: 4, name: "أميرال | Admiral", xp_required: 5000 },
-            { level: 5, name: "أمير المجرة | Galactic Admiral", xp_required: 10000 },
+            { level: 0, name: "مستكشف | Cadet", xp_required: 0 }, { level: 1, name: "ملاح | Navigator", xp_required: 100 }, { level: 2, name: "قائد | Commander", xp_required: 500 }, { level: 3, name: "كابتن | Captain", xp_required: 1000 }, { level: 4, name: "أميرال | Admiral", xp_required: 5000 }, { level: 5, name: "أمير المجرة | Galactic Admiral", xp_required: 10000 },
         ];
 
         let growthChart = null;
@@ -170,131 +134,95 @@
             if (typeof num !== 'number' || isNaN(num)) return '--.--';
             return num.toFixed(decimals);
         }
-        
+
         async function fetchAllData() {
             try {
                 const [portfolioRes, historyRes] = await Promise.all([ fetch('/api/portfolio-data'), fetch('/api/portfolio-history') ]);
-                if (!portfolioRes.ok) throw new Error((await portfolioRes.json()).error || 'Failed to fetch portfolio data');
-                
+                if (!portfolioRes.ok) throw new Error((await portfolioRes.json()).error);
                 const portfolioData = await portfolioRes.json();
                 const historyData = historyRes.ok ? await historyRes.json() : [];
-
-                updateDashboard(portfolioData);
-                updateRankSystem(portfolioData.totalXP);
-                renderGrowthChart(historyData);
-
+                updateDashboard(portfolioData, historyData);
                 UI.loadingState.classList.add('hidden');
                 UI.errorState.classList.add('hidden');
                 UI.dashboardSection.classList.remove('hidden');
-
             } catch (error) {
                 console.error("Frontend Error:", error);
                 UI.loadingState.classList.add('hidden');
-                UI.errorMessage.textContent = `فشل الاتصال بالسفينة الأم. السبب: ${error.message}`;
+                UI.errorMessage.textContent = `فشل الاتصال: ${error.message}`;
                 UI.errorState.classList.remove('hidden');
             }
         }
-
-        function updateDashboard(data) {
-            UI.totalBalanceElem.textContent = formatNumber(data.totalBalance);
-            UI.assetsValueElem.textContent = formatNumber(data.assetsValue);
-            UI.openPositionsCountElem.textContent = data.openPositionsCount;
+        
+        function updateDashboard(data, historyData) {
+            // Update KPIs
+            UI.totalBalance.textContent = `$${formatNumber(data.totalBalance)}`;
+            UI.openPositionsCount.textContent = data.openPositionsCount;
+            updateRankSystem(data.totalXP);
             
+            // Update Trading Log
+            UI.bestTradesBody.innerHTML = (data.bestTrades && data.bestTrades.length > 0)
+                ? data.bestTrades.map(t => `<div class="data-item text-xs"><span class="text-green-400">BEST TRADE: ${t.symbol}</span><span>+${formatNumber(t.profit)} CR</span></div>`).join('')
+                : '<div class="data-item text-xs"><span>TRADING LOG</span><span>EMPTY</span></div>';
+            UI.worstTradesBody.innerHTML = (data.worstTrades && data.worstTrades.length > 0)
+                ? data.worstTrades.map(t => `<div class="data-item text-xs"><span class="text-red-400">WORST TRADE: ${t.symbol}</span><span>${formatNumber(t.profit)} CR</span></div>`).join('')
+                : '';
+
+            // Update Positions Table
             UI.positionsTable.innerHTML = `
-                <thead class="text-gray-400 border-b border-[var(--border-color)]">
-                    <tr>
-                        <th class="p-4 text-sm font-medium">المهمة</th><th class="p-4 text-sm font-medium">الاتجاه</th><th class="p-4 text-sm font-medium">الرافعة</th><th class="p-4 text-sm font-medium">سعر الإرسال</th><th class="p-4 text-sm font-medium">السعر الحالي</th><th class="p-4 text-sm font-medium">النتيجة (USDT)</th><th class="p-4 text-sm font-medium">النتيجة (%)</th>
-                    </tr>
-                </thead>
-                <tbody id="positions-body"></tbody>`;
+                <thead><tr class="text-gray-400 border-b border-[var(--border-color)]">
+                    <th class="p-2">MISSION</th><th class="p-2">TYPE</th><th class="p-2">LEVERAGE</th><th class="p-2">ENTRY</th><th class="p-2">CURRENT</th><th class="p-2">PNL (CR)</th><th class="p-2">PNL (%)</th>
+                </tr></thead><tbody id="positions-body"></tbody>`;
             const positionsBody = document.getElementById('positions-body');
             if (data.openPositions && data.openPositions.length > 0) {
                  data.openPositions.forEach(pos => {
-                    const pnlClass = pos.pnl >= 0 ? 'positive' : 'negative';
-                    positionsBody.innerHTML += `<tr class="border-b border-[var(--border-color)] hover:bg-[var(--bg-primary)]">
-                        <td class="p-4 font-medium text-white">${pos.symbol}</td><td class="p-4 ${pnlClass}">${pos.positionType === 'Long' ? 'صعود' : 'هبوط'}</td><td class="p-4">${pos.leverage}x</td>
-                        <td class="p-4">${formatNumber(pos.entryPrice, 5)}</td><td class="p-4">${formatNumber(pos.currentPrice, 5)}</td>
-                        <td class="p-4 font-bold ${pnlClass}">${formatNumber(pos.pnl)}</td><td class="p-4 font-bold ${pnlClass}">${formatNumber(pos.pnlPercentage)}%</td>
+                    const pnlClass = pos.pnl >= 0 ? 'text-green-400' : 'text-red-400';
+                    positionsBody.innerHTML += `<tr class="border-b border-dashed border-[var(--border-color)]/20">
+                        <td class="p-2 font-bold">${pos.symbol}</td><td class="p-2 ${pnlClass}">${pos.positionType === 'Long' ? 'LONG' : 'SHORT'}</td><td class="p-2">${pos.leverage}x</td>
+                        <td class="p-2">${formatNumber(pos.entryPrice, 4)}</td><td class="p-2">${formatNumber(pos.currentPrice, 4)}</td>
+                        <td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnl)}</td><td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnlPercentage)}%</td>
                     </tr>`;
                 });
             } else {
-                 positionsBody.innerHTML = `<tr><td colspan="7" class="text-center p-6 text-gray-500">لا توجد مهمات نشطة.</td></tr>`;
+                 positionsBody.innerHTML = `<tr><td colspan="7" class="text-center p-4 text-gray-500">NO ACTIVE MISSIONS</td></tr>`;
             }
-            
-            UI.bestTradesBody.innerHTML = '';
-            if (data.bestTrades && data.bestTrades.length > 0) {
-                 data.bestTrades.forEach(trade => {
-                    UI.bestTradesBody.innerHTML += `<div class="hud-card p-4 flex justify-between items-center"><div class="flex items-center gap-3"><span class="text-green-400">▲</span><div><p class="font-bold text-white">${trade.symbol}</p><p class="text-xs text-gray-400">${trade.closeDate}</p></div></div><p class="font-bold text-lg positive">+${formatNumber(trade.profit)}</p></div>`;
-                });
-            } else {
-                UI.bestTradesBody.innerHTML = `<div class="hud-card p-6 text-center text-gray-500">...سجل المهمات فارغ</div>`;
-            }
-            UI.worstTradesBody.innerHTML = '';
-             if (data.worstTrades && data.worstTrades.length > 0) {
-                 data.worstTrades.forEach(trade => {
-                    UI.worstTradesBody.innerHTML += `<div class="hud-card p-4 flex justify-between items-center"><div class="flex items-center gap-3"><span class="text-red-400">▼</span><div><p class="font-bold text-white">${trade.symbol}</p><p class="text-xs text-gray-400">${trade.closeDate}</p></div></div><p class="font-bold text-lg negative">${formatNumber(trade.profit)}</p></div>`;
-                });
-            } else {
-                UI.worstTradesBody.innerHTML = `<div class="hud-card p-6 text-center text-gray-500">...سجل المهمات فارغ</div>`;
-            }
+            renderGrowthChart(historyData);
         }
 
         function updateRankSystem(totalXP) {
             let currentRank = ranks[0];
-            let nextRank = ranks[1];
-
             for (let i = 0; i < ranks.length; i++) {
-                if (totalXP >= ranks[i].xp_required) {
-                    currentRank = ranks[i];
-                    nextRank = ranks[i + 1] || ranks[i];
-                } else {
-                    break;
-                }
+                if (totalXP >= ranks[i].xp_required) { currentRank = ranks[i]; } else { break; }
             }
-            
-            const xpForCurrentLevel = totalXP - currentRank.xp_required;
-            const xpNeededForNextLevel = nextRank.xp_required - currentRank.xp_required;
-            const percentage = xpNeededForNextLevel > 0 ? (xpForCurrentLevel / xpNeededForNextLevel) * 100 : 100;
-
-            UI.rankName.textContent = currentRank.name;
-            UI.xpCurrent.textContent = `XP ${formatNumber(totalXP, 0)}`;
-            UI.xpNext.textContent = `XP ${nextRank.xp_required}`;
-            UI.xpBar.style.width = `${Math.min(100, percentage)}%`;
+            UI.rankName.textContent = currentRank.name.split('|')[1].trim().toUpperCase();
         }
 
         function renderGrowthChart(historyData) {
-            if (!historyData) return;
-            const labels = historyData.map(d => new Date(d.timestamp).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' }));
+            if (!historyData || historyData.length < 2) return;
+            const labels = historyData.map(d => new Date(d.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
             const dataPoints = historyData.map(d => parseFloat(d.equity));
             if (growthChart) { growthChart.destroy(); }
             Chart.defaults.color = 'var(--text-secondary)';
-
             growthChart = new Chart(UI.growthChartCanvas, {
                 type: 'line',
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: 'مسار الرحلة (USDT)',
                         data: dataPoints,
-                        borderColor: 'var(--accent-cyan)',
+                        borderColor: 'var(--hud-border)',
                         backgroundColor: 'rgba(0, 246, 255, 0.1)',
                         fill: true,
                         tension: 0.4,
-                        pointBackgroundColor: 'var(--accent-cyan)',
-                        pointRadius: 4,
+                        pointRadius: 0,
                     }]
                 },
                 options: {
                     responsive: true,
-                    scales: { 
-                        y: { beginAtZero: false, grid: { color: 'var(--border-color)' } }, 
-                        x: { grid: { color: 'var(--border-color)' } } 
-                    },
+                    scales: { y: { display: false }, x: { display: false } },
                     plugins: { legend: { display: false } }
                 }
             });
         }
-
+        
         document.addEventListener('DOMContentLoaded', () => {
             fetchAllData();
             setInterval(fetchAllData, 60000); 
