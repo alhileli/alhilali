@@ -15,7 +15,6 @@
         .negative { color: #dc3545; }
         .loader { border: 4px solid #30363d; border-top: 4px solid #388bfd; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        /* Custom scrollbar for better aesthetics */
         .custom-scrollbar::-webkit-scrollbar { width: 8px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #161b22; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
@@ -31,27 +30,22 @@
             <p class="text-gray-400">تحليل شامل ومباشر ومحدّث تلقائياً لأداء المحفظة والصفقات.</p>
         </header>
 
-        <!-- Loading State -->
         <div id="loading-state" class="text-center py-10">
             <div class="loader mx-auto"></div>
             <p class="mt-4 text-gray-400">جاري جلب البيانات المطورة من الخادم الآمن...</p>
         </div>
 
-        <!-- Error State -->
         <div id="error-state" class="card p-6 text-center hidden">
              <p id="error-message" class="text-red-400"></p>
         </div>
 
-        <!-- Dashboard Section -->
         <div id="dashboard-section" class="hidden space-y-8">
-            <!-- KPIs -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
                 <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">إجمالي قيمة المحفظة (USDT)</h3><p id="total-balance" class="text-3xl font-bold text-white mt-2">--.--</p></div>
                 <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">قيمة الأصول (USDT)</h3><p id="assets-value" class="text-3xl font-bold text-white mt-2">--.--</p></div>
                 <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">عدد المراكز المفتوحة</h3><p id="open-positions-count" class="text-3xl font-bold mt-2">--</p></div>
             </div>
 
-            <!-- Open Positions -->
             <div>
                 <h2 class="text-2xl font-bold text-white mb-4">المراكز المفتوحة حالياً</h2>
                 <div class="card overflow-x-auto custom-scrollbar">
@@ -59,19 +53,14 @@
                 </div>
             </div>
 
-             <!-- Trade History -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                     <h2 class="text-2xl font-bold text-white mb-4">أفضل 3 صفقات رابحة</h2>
-                    <div id="best-trades-container" class="card p-4 space-y-3">
-                        <!-- Best trades will be inserted here -->
-                    </div>
+                    <div id="best-trades-container" class="card p-4 space-y-3"></div>
                 </div>
                 <div>
                     <h2 class="text-2xl font-bold text-white mb-4">أسوأ 3 صفقات خاسرة</h2>
-                    <div id="worst-trades-container" class="card p-4 space-y-3">
-                       <!-- Worst trades will be inserted here -->
-                    </div>
+                    <div id="worst-trades-container" class="card p-4 space-y-3"></div>
                 </div>
             </div>
         </div>
@@ -94,31 +83,28 @@
             worstTradesContainer: document.getElementById('worst-trades-container'),
         };
 
-        // *** THIS IS THE CRITICAL FIX ***
-        // A safe function to format numbers that checks for null/undefined first.
-        function safeFormat(value, options = { minimumFractionDigits: 2, maximumFractionDigits: 2 }) {
+        // *** SUPER-ROBUST FORMATTING FUNCTION ***
+        function safeFormat(value, fractionDigits = 2) {
+            // Check if value is a valid number
             if (typeof value !== 'number' || isNaN(value)) {
-                return '--.--'; // Return a placeholder if the value is not a valid number
+                return '--.--'; // Return placeholder for invalid data
             }
-            return value.toLocaleString('ar-EG', options);
+            // Use toFixed for consistent, universal number formatting
+            return value.toFixed(fractionDigits);
         }
 
         async function fetchData() {
             try {
                 const response = await fetch('/api/portfolio-data'); 
-                
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({ error: 'فشل في قراءة استجابة الخادم.' }));
                     throw new Error(errorData.error || `خطأ من الخادم: ${response.status}`);
                 }
-                
                 const data = await response.json();
                 updateDashboard(data);
-
                 UI.loadingState.classList.add('hidden');
                 UI.errorState.classList.add('hidden');
                 UI.dashboardSection.classList.remove('hidden');
-
             } catch (error) {
                 console.error('Error:', error);
                 UI.loadingState.classList.add('hidden');
@@ -129,12 +115,10 @@
         }
 
         function updateDashboard(data) {
-            // Use the safeFormat function for all number displays
-            UI.totalBalanceElem.textContent = safeFormat(data.totalBalance);
-            UI.assetsValueElem.textContent = safeFormat(data.assetsValue);
-            UI.openPositionsCountElem.textContent = safeFormat(data.openPositionsCount, { minimumFractionDigits: 0 });
+            UI.totalBalanceElem.textContent = safeFormat(data.totalBalance, 2);
+            UI.assetsValueElem.textContent = safeFormat(data.assetsValue, 2);
+            UI.openPositionsCountElem.textContent = safeFormat(data.openPositionsCount, 0);
 
-            // Update Open Positions Table
             UI.openPositionsBody.innerHTML = ''; 
             if (data.openPositions && data.openPositions.length > 0) {
                  data.openPositions.forEach(pos => {
@@ -145,10 +129,10 @@
                         <td class="p-4 font-medium text-white">${pos.symbol}</td>
                         <td class="p-4 ${pos.positionType === 'Long' ? 'positive' : 'negative'}">${pos.positionType === 'Long' ? 'شراء' : 'بيع'}</td>
                         <td class="p-4">${pos.leverage}x</td>
-                        <td class="p-4">${safeFormat(pos.openPrice, {maximumFractionDigits: 5})}</td>
-                        <td class="p-4">${safeFormat(pos.currentPrice, {maximumFractionDigits: 5})}</td>
-                        <td class="p-4 font-bold ${pnlClass}">${safeFormat(pos.unrealizedPNL)}</td>
-                        <td class="p-4 font-bold ${pnlClass}">${safeFormat(pos.pnlPercentage)}%</td>
+                        <td class="p-4">${safeFormat(pos.openPrice, 5)}</td>
+                        <td class="p-4">${safeFormat(pos.currentPrice, 5)}</td>
+                        <td class="p-4 font-bold ${pnlClass}">${safeFormat(pos.unrealizedPNL, 2)}</td>
+                        <td class="p-4 font-bold ${pnlClass}">${safeFormat(pos.pnlPercentage, 2)}%</td>
                     `;
                     UI.openPositionsBody.appendChild(row);
                 });
@@ -156,7 +140,6 @@
                  UI.openPositionsBody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-gray-400">لا توجد مراكز مفتوحة حالياً.</td></tr>`;
             }
 
-            // Update Best Trades
             UI.bestTradesContainer.innerHTML = '';
              if (data.bestTrades && data.bestTrades.length > 0) {
                 data.bestTrades.forEach(trade => {
@@ -167,7 +150,7 @@
                             <p class="font-bold text-white">${trade.symbol}</p>
                             <p class="text-sm text-gray-400">${trade.date}</p>
                         </div>
-                        <p class="font-bold positive">+${safeFormat(trade.pnl)} USDT</p>
+                        <p class="font-bold positive">+${safeFormat(trade.pnl, 2)} USDT</p>
                     `;
                     UI.bestTradesContainer.appendChild(tradeDiv);
                 });
@@ -175,7 +158,6 @@
                  UI.bestTradesContainer.innerHTML = `<p class="text-center text-gray-400 p-4">لا توجد بيانات كافية.</p>`;
             }
 
-            // Update Worst Trades
             UI.worstTradesContainer.innerHTML = '';
             if (data.worstTrades && data.worstTrades.length > 0) {
                 data.worstTrades.forEach(trade => {
@@ -186,7 +168,7 @@
                             <p class="font-bold text-white">${trade.symbol}</p>
                             <p class="text-sm text-gray-400">${trade.date}</p>
                         </div>
-                        <p class="font-bold negative">${safeFormat(trade.pnl)} USDT</p>
+                        <p class="font-bold negative">${safeFormat(trade.pnl, 2)} USDT</p>
                     `;
                     UI.worstTradesContainer.appendChild(tradeDiv);
                 });
