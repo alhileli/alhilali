@@ -15,8 +15,11 @@
         .negative { color: #dc3545; }
         .loader { border: 4px solid #30363d; border-top: 4px solid #388bfd; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .skeleton { animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; background-color: #30363d; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        /* Custom scrollbar for better aesthetics */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #161b22; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #444c56; }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -28,48 +31,53 @@
             <p class="text-gray-400">تحليل شامل ومباشر ومحدّث تلقائياً لأداء المحفظة والصفقات.</p>
         </header>
 
+        <!-- Loading State -->
         <div id="loading-state" class="text-center py-10">
             <div class="loader mx-auto"></div>
             <p class="mt-4 text-gray-400">جاري جلب البيانات المطورة من الخادم الآمن...</p>
         </div>
 
+        <!-- Error State -->
         <div id="error-state" class="card p-6 text-center hidden">
              <p id="error-message" class="text-red-400"></p>
         </div>
 
+        <!-- Dashboard Section -->
         <div id="dashboard-section" class="hidden space-y-8">
             <!-- KPIs -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
                 <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">إجمالي قيمة المحفظة (USDT)</h3><p id="total-balance" class="text-3xl font-bold text-white mt-2">--.--</p></div>
                 <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">قيمة الأصول (USDT)</h3><p id="assets-value" class="text-3xl font-bold text-white mt-2">--.--</p></div>
-                <!-- *** THIS IS THE CHANGED LINE *** -->
                 <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">عدد المراكز المفتوحة</h3><p id="open-positions-count" class="text-3xl font-bold mt-2">--</p></div>
             </div>
 
             <!-- Open Positions -->
             <div>
                 <h2 class="text-2xl font-bold text-white mb-4">المراكز المفتوحة حالياً</h2>
-                <div class="card overflow-x-auto">
-                    <table class="w-full text-right"><thead class="bg-gray-800 text-gray-300"><tr><th class="p-4">الرمز</th><th class="p-4">النوع</th><th class="p-4">الرافعة</th><th class="p-4">سعر الدخول</th><th class="p-4">السعر الحالي</th><th class="p-4">الربح/الخسارة (USDT)</th><th class="p-4">الربح/الخسارة (%)</th></tr></thead><tbody id="positions-body"></tbody></table>
+                <div class="card overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-right min-w-[800px]"><thead class="bg-gray-800 text-gray-300"><tr><th class="p-4 rounded-tr-lg">الرمز</th><th class="p-4">النوع</th><th class="p-4">الرافعة</th><th class="p-4">سعر الدخول</th><th class="p-4">السعر الحالي</th><th class="p-4">الربح/الخسارة (USDT)</th><th class="p-4 rounded-tl-lg">الربح/الخسارة (%)</th></tr></thead><tbody id="open-positions-body"></tbody></table>
                 </div>
             </div>
-            
-            <!-- Historical Trades -->
+
+             <!-- Trade History -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                     <h2 class="text-2xl font-bold text-white mb-4">أفضل 3 صفقات رابحة</h2>
-                    <div id="best-trades-card" class="card p-4 space-y-3"></div>
+                    <div id="best-trades-container" class="card p-4 space-y-3">
+                        <!-- Best trades will be inserted here -->
+                    </div>
                 </div>
                 <div>
                     <h2 class="text-2xl font-bold text-white mb-4">أسوأ 3 صفقات خاسرة</h2>
-                    <div id="worst-trades-card" class="card p-4 space-y-3"></div>
+                    <div id="worst-trades-container" class="card p-4 space-y-3">
+                       <!-- Worst trades will be inserted here -->
+                    </div>
                 </div>
             </div>
         </div>
-
          <footer class="text-center text-gray-500 text-sm pt-4">
             يتم تحديث البيانات كل 60 ثانية.
-         </footer>
+        </footer>
     </div>
 
     <script>
@@ -80,37 +88,54 @@
             dashboardSection: document.getElementById('dashboard-section'),
             totalBalanceElem: document.getElementById('total-balance'),
             assetsValueElem: document.getElementById('assets-value'),
-            openPositionsCountElem: document.getElementById('open-positions-count'), // Updated ID
-            positionsBody: document.getElementById('positions-body'),
-            bestTradesCard: document.getElementById('best-trades-card'),
-            worstTradesCard: document.getElementById('worst-trades-card'),
+            openPositionsCountElem: document.getElementById('open-positions-count'),
+            openPositionsBody: document.getElementById('open-positions-body'),
+            bestTradesContainer: document.getElementById('best-trades-container'),
+            worstTradesContainer: document.getElementById('worst-trades-container'),
         };
 
-        function formatNumber(num) {
-            return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        // *** THIS IS THE CRITICAL FIX ***
+        // A safe function to format numbers that checks for null/undefined first.
+        function safeFormat(value, options = { minimumFractionDigits: 2, maximumFractionDigits: 2 }) {
+            if (typeof value !== 'number' || isNaN(value)) {
+                return '--.--'; // Return a placeholder if the value is not a valid number
+            }
+            return value.toLocaleString('ar-EG', options);
         }
-        function formatPrice(num) {
-            return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 });
-        }
-        
-        function createTradeRow(trade, isPositive) {
-            const color = isPositive ? 'text-green-400' : 'text-red-400';
-            return `
-                <div class="flex justify-between items-center p-2 rounded-md bg-gray-800">
-                    <div class="font-mono">${trade.symbol}</div>
-                    <div class="text-xs text-gray-400">${trade.date}</div>
-                    <div class="font-bold ${color}">${formatNumber(trade.pnl)} USDT</div>
-                </div>
-            `;
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/portfolio-data'); 
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'فشل في قراءة استجابة الخادم.' }));
+                    throw new Error(errorData.error || `خطأ من الخادم: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                updateDashboard(data);
+
+                UI.loadingState.classList.add('hidden');
+                UI.errorState.classList.add('hidden');
+                UI.dashboardSection.classList.remove('hidden');
+
+            } catch (error) {
+                console.error('Error:', error);
+                UI.loadingState.classList.add('hidden');
+                UI.errorMessage.textContent = `فشل في عرض البيانات. السبب: ${error.message}`;
+                UI.errorState.classList.remove('hidden');
+                UI.dashboardSection.classList.add('hidden');
+            }
         }
 
         function updateDashboard(data) {
-            UI.totalBalanceElem.textContent = formatNumber(data.totalBalance);
-            UI.assetsValueElem.textContent = formatNumber(data.assetsValue);
-            UI.openPositionsCountElem.textContent = data.openPositionsCount; // Updated data point
+            // Use the safeFormat function for all number displays
+            UI.totalBalanceElem.textContent = safeFormat(data.totalBalance);
+            UI.assetsValueElem.textContent = safeFormat(data.assetsValue);
+            UI.openPositionsCountElem.textContent = safeFormat(data.openPositionsCount, { minimumFractionDigits: 0 });
 
-            // Render Open Positions
-            UI.positionsBody.innerHTML = '';
+            // Update Open Positions Table
+            UI.openPositionsBody.innerHTML = ''; 
             if (data.openPositions && data.openPositions.length > 0) {
                  data.openPositions.forEach(pos => {
                     const pnlClass = pos.unrealizedPNL >= 0 ? 'positive' : 'negative';
@@ -118,53 +143,55 @@
                     row.className = 'border-b border-gray-700 hover:bg-gray-800';
                     row.innerHTML = `
                         <td class="p-4 font-medium text-white">${pos.symbol}</td>
-                        <td class="p-4 ${pos.positionType === 'Long' ? 'text-green-400' : 'text-red-400'}">${pos.positionType === 'Long' ? 'شراء' : 'بيع'}</td>
+                        <td class="p-4 ${pos.positionType === 'Long' ? 'positive' : 'negative'}">${pos.positionType === 'Long' ? 'شراء' : 'بيع'}</td>
                         <td class="p-4">${pos.leverage}x</td>
-                        <td class="p-4">${formatPrice(pos.openPrice)}</td>
-                        <td class="p-4">${formatPrice(pos.currentPrice)}</td>
-                        <td class="p-4 font-bold ${pnlClass}">${formatNumber(pos.unrealizedPNL)}</td>
-                        <td class="p-4 font-bold ${pnlClass}">${formatNumber(pos.pnlPercentage)}%</td>
+                        <td class="p-4">${safeFormat(pos.openPrice, {maximumFractionDigits: 5})}</td>
+                        <td class="p-4">${safeFormat(pos.currentPrice, {maximumFractionDigits: 5})}</td>
+                        <td class="p-4 font-bold ${pnlClass}">${safeFormat(pos.unrealizedPNL)}</td>
+                        <td class="p-4 font-bold ${pnlClass}">${safeFormat(pos.pnlPercentage)}%</td>
                     `;
-                    UI.positionsBody.appendChild(row);
+                    UI.openPositionsBody.appendChild(row);
                 });
             } else {
-                UI.positionsBody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-gray-400">لا توجد مراكز مفتوحة حالياً.</td></tr>`;
+                 UI.openPositionsBody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-gray-400">لا توجد مراكز مفتوحة حالياً.</td></tr>`;
             }
 
-            // Render Best Trades
-            UI.bestTradesCard.innerHTML = '';
-            if (data.bestTrades && data.bestTrades.length > 0) {
-                data.bestTrades.forEach(trade => UI.bestTradesCard.innerHTML += createTradeRow(trade, true));
+            // Update Best Trades
+            UI.bestTradesContainer.innerHTML = '';
+             if (data.bestTrades && data.bestTrades.length > 0) {
+                data.bestTrades.forEach(trade => {
+                    const tradeDiv = document.createElement('div');
+                    tradeDiv.className = 'flex justify-between items-center bg-gray-800 p-3 rounded';
+                    tradeDiv.innerHTML = `
+                        <div>
+                            <p class="font-bold text-white">${trade.symbol}</p>
+                            <p class="text-sm text-gray-400">${trade.date}</p>
+                        </div>
+                        <p class="font-bold positive">+${safeFormat(trade.pnl)} USDT</p>
+                    `;
+                    UI.bestTradesContainer.appendChild(tradeDiv);
+                });
             } else {
-                UI.bestTradesCard.innerHTML = `<p class="text-center text-gray-400 p-4">لا توجد بيانات كافية.</p>`;
+                 UI.bestTradesContainer.innerHTML = `<p class="text-center text-gray-400 p-4">لا توجد بيانات كافية.</p>`;
             }
 
-            // Render Worst Trades
-            UI.worstTradesCard.innerHTML = '';
+            // Update Worst Trades
+            UI.worstTradesContainer.innerHTML = '';
             if (data.worstTrades && data.worstTrades.length > 0) {
-                data.worstTrades.forEach(trade => UI.worstTradesCard.innerHTML += createTradeRow(trade, false));
+                data.worstTrades.forEach(trade => {
+                    const tradeDiv = document.createElement('div');
+                    tradeDiv.className = 'flex justify-between items-center bg-gray-800 p-3 rounded';
+                    tradeDiv.innerHTML = `
+                        <div>
+                            <p class="font-bold text-white">${trade.symbol}</p>
+                            <p class="text-sm text-gray-400">${trade.date}</p>
+                        </div>
+                        <p class="font-bold negative">${safeFormat(trade.pnl)} USDT</p>
+                    `;
+                    UI.worstTradesContainer.appendChild(tradeDiv);
+                });
             } else {
-                 UI.worstTradesCard.innerHTML = `<p class="text-center text-gray-400 p-4">لا توجد بيانات كافية.</p>`;
-            }
-        }
-
-        async function fetchData() {
-            try {
-                const response = await fetch('/api/portfolio-data'); 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || `خطأ من الخادم: ${response.status}`);
-                }
-                const data = await response.json();
-                updateDashboard(data);
-                UI.loadingState.classList.add('hidden');
-                UI.errorState.classList.add('hidden');
-                UI.dashboardSection.classList.remove('hidden');
-            } catch (error) {
-                console.error('Error fetching data:', error);
-                UI.loadingState.classList.add('hidden');
-                UI.errorMessage.textContent = `فشل في عرض البيانات. السبب: ${error.message}.`;
-                UI.errorState.classList.remove('hidden');
+                UI.worstTradesContainer.innerHTML = `<p class="text-center text-gray-400 p-4">لا توجد بيانات كافية.</p>`;
             }
         }
 
