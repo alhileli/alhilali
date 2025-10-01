@@ -71,21 +71,25 @@ app.get('/api/portfolio-data', async (req, res) => {
                 const ticker = allTickers[pos.symbol];
                 const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
                 
-                // *** THE FINAL, CORRECT FIX ***
-                // Directly use the unrealizedPnl value provided by the API. This is the source of truth.
-                const unrealizedPNL = parseFloat(pos.unrealizedPnl || 0);
-                totalUnrealizedPNL += unrealizedPNL;
+                const positionSize = parseFloat(pos.holdVol);
+                const openPrice = parseFloat(pos.holdAvgPrice);
+                const pnlDirection = pos.positionType === 1 ? 1 : -1;
+                const contractSize = parseFloat(pos.contractSize); 
                 
-                const margin = parseFloat(pos.im) || 1; // Avoid division by zero
-                const pnlPercentage = (unrealizedPNL / margin) * 100;
+                // *** THE ULTIMATE FIX: Revert to manual calculation with the correct Contract Size formula ***
+                const calculatedPNL = (currentPrice > 0) ? (currentPrice - openPrice) * positionSize * contractSize * pnlDirection : 0;
+                totalUnrealizedPNL += calculatedPNL;
+                
+                const margin = parseFloat(pos.im) || 1;
+                const pnlPercentage = (calculatedPNL / margin) * 100;
                 
                 openPositions.push({
                     symbol: pos.symbol,
                     positionType: pos.positionType === 1 ? 'Long' : 'Short',
                     leverage: pos.leverage,
-                    openPrice: parseFloat(pos.holdAvgPrice),
+                    openPrice: openPrice,
                     currentPrice: currentPrice,
-                    unrealizedPNL: unrealizedPNL,
+                    unrealizedPNL: calculatedPNL,
                     pnlPercentage: pnlPercentage
                 });
             }
