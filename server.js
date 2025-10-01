@@ -1,10 +1,12 @@
 // -----------------------------------------------------------------------------
 // |                  ANONYMOUS ASTRONAUT - SERVER ENGINE                      |
-// |                    VERSION: Interactive AI Upgrade                        |
-// | This version analyzes portfolio performance (24h change) to generate a    |
-// |      dynamic status and AI message, making the frontend interactive.      |
+// |                   VERSION: Final Verified & Polished                      |
+// | This is the complete, verified, and final server code. It includes all    |
+// | features: DB connection, AI status analysis, XP calculation, and all      |
+// | previous bug fixes. This is the definitive engine for your cockpit.       |
 // -----------------------------------------------------------------------------
 
+// استيراد المكتبات الضرورية
 import express from 'express';
 import crypto from 'crypto';
 import fetch from 'node-fetch';
@@ -13,15 +15,18 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import pg from 'pg';
 
+// --- [ CONFIGURATION ] ---
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// إعداد الخادم
 const app = express();
 const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.static(__dirname));
 
+// --- [ DATABASE SETUP ] ---
 let pool;
 if (process.env.DATABASE_URL) {
     pool = new Pool({
@@ -48,6 +53,7 @@ const initializeDatabase = async () => {
     }
 };
 
+// --- [ API & SERVER LOGIC ] ---
 const apiKey = process.env.MEXC_API_KEY;
 const secretKey = process.env.MEXC_SECRET_KEY;
 const BASE_URL = 'https://contract.mexc.com';
@@ -63,7 +69,11 @@ async function makeRequest(method, endpoint, params = '') {
     const url = `${BASE_URL}${endpoint}${params ? '?' + params : ''}`;
     const headers = { 'Content-Type': 'application/json', 'ApiKey': apiKey, 'Request-Time': timestamp, 'Signature': signature };
     const response = await fetch(url, { method, headers, timeout: 30000 });
-    if (!response.ok) { const errorBody = await response.json(); throw new Error(errorBody.msg || 'API Request Failed'); }
+    if (!response.ok) { 
+        const errorBody = await response.json(); 
+        console.error(`API Error on ${endpoint}:`, errorBody);
+        throw new Error(errorBody.msg || 'API Request Failed'); 
+    }
     return await response.json();
 }
 
@@ -76,21 +86,24 @@ async function getPortfolioDataAndLog() {
         fetch(`${BASE_URL}/api/v1/contract/detail`).then(r => r.json()),
     ]);
 
+    // Data Guards to prevent crashes
     const usdtAsset = (assetsData.data || []).find(a => a.currency === 'USDT');
     const openPositions = positionsData.data || [];
     const closedOrders = historyData.data || [];
     const tickers = tickersData.data || [];
     const contracts = contractDetailsData.data || [];
     
+    // Use the definitive 'equity' value from the API as the total balance
     const totalEquity = usdtAsset ? usdtAsset.equity : 0;
     
+    // Log equity to the database periodically
     if (pool) {
         try {
             const lastLog = await pool.query('SELECT timestamp FROM portfolio_history ORDER BY timestamp DESC LIMIT 1');
             const now = new Date();
             const lastLogTime = lastLog.rows.length > 0 ? new Date(lastLog.rows[0].timestamp) : new Date(0);
             const minutesSinceLastLog = (now.getTime() - lastLogTime.getTime()) / 60000;
-            if (minutesSinceLastLog > 5) {
+            if (minutesSinceLastLog > 5) { // Log approximately every 5 minutes
                 await pool.query('INSERT INTO portfolio_history (equity, timestamp) VALUES ($1, NOW())', [totalEquity]);
                 console.log(`Successfully logged new equity: ${totalEquity}`);
             }
@@ -112,7 +125,7 @@ async function getPortfolioDataAndLog() {
         return { symbol: pos.symbol, positionType: pos.positionType === 1 ? 'Long' : 'Short', leverage: pos.leverage, entryPrice: pos.holdAvgPrice, currentPrice: currentPrice, pnl, pnlPercentage };
     });
 
-    // --- [ NEW: AI Analysis Logic ] ---
+    // --- [ AI Analysis Logic ] ---
     let portfolioStatus = 'STABLE';
     let aiMessage = 'الأنظمة مستقرة. كل شيء على ما يرام أيها القائد.';
     let change24h = 0;
@@ -132,7 +145,7 @@ async function getPortfolioDataAndLog() {
             }
 
             const topPerformingPosition = processedPositions.length > 0 
-                ? processedPositions.reduce((max, p) => p.pnl > max.pnl ? p : max, processedPositions[0]) 
+                ? processedPositions.reduce((max, p) => p.pnl > max.pnl ? p : max, {pnl: -Infinity}) 
                 : null;
 
             if (change24h > 3) { // If profit is more than 3%
@@ -149,12 +162,12 @@ async function getPortfolioDataAndLog() {
             console.error("AI Analysis Error:", err);
         }
     }
-    // --- [ END NEW AI Logic ] ---
     
     const closedTrades = closedOrders.filter(o => o.state === 3 && o.profit !== 0).map(o => ({ symbol: o.symbol, profit: o.profit || 0, closeDate: o.updateTime ? new Date(o.updateTime).toLocaleDateString('ar-EG') : 'N/A' }));
     const profitableTrades = closedTrades.filter(t => t.profit > 0).sort((a, b) => b.profit - a.profit);
     const losingTrades = closedTrades.filter(t => t.profit < 0).sort((a, b) => a.profit - b.profit);
     
+    // Calculate total profit for XP
     const totalHistoricalProfit = profitableTrades.reduce((sum, trade) => sum + trade.profit, 0);
 
     return {
@@ -165,11 +178,12 @@ async function getPortfolioDataAndLog() {
         bestTrades: profitableTrades.slice(0, 3),
         worstTrades: losingTrades.slice(0, 3),
         totalXP: totalHistoricalProfit,
-        portfolioStatus, // <-- NEW
-        aiMessage,       // <-- NEW
+        portfolioStatus,
+        aiMessage,
     };
 }
 
+// API Endpoints
 app.get('/api/portfolio-data', async (req, res) => {
     try {
         const data = await getPortfolioDataAndLog();
@@ -198,10 +212,12 @@ app.get('/api/portfolio-history', async (req, res) => {
     }
 });
 
+// Serve Frontend
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Start Server
 app.listen(PORT, () => {
     console.log(`Server listening at port ${PORT}`);
     initializeDatabase();
