@@ -1,189 +1,205 @@
-// --- Dependencies ---
-const express = require('express');
-const fetch = require('node-fetch');
-const CryptoJS = require('crypto-js');
-const cors = require('cors');
-const path = require('path');
-require('dotenv').config();
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة عرض أداء المحفظة (MEXC)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Tajawal', sans-serif; background-color: #0d1117; color: #c9d1d9; }
+        .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+        .positive { color: #28a745; }
+        .negative { color: #dc3545; }
+        .loader { border: 4px solid #30363d; border-top: 4px solid #388bfd; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Custom scrollbar for better aesthetics */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #161b22; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #444c56; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
 
-// --- Configuration ---
-const app = express();
-const port = process.env.PORT || 3000;
-const API_BASE_URL = 'https://contract.mexc.com';
-const REQUEST_TIMEOUT = 30000; // 30 seconds timeout
+    <div id="app" class="max-w-7xl mx-auto space-y-8">
+        
+        <header class="text-center space-y-2">
+            <h1 class="text-3xl md:text-4xl font-bold text-white">لوحة عرض أداء المحفظة (MEXC)</h1>
+            <p class="text-gray-400">تحليل شامل ومباشر ومحدّث تلقائياً لأداء المحفظة والصفقات.</p>
+        </header>
 
-// --- API Keys ---
-const apiKey = process.env.MEXC_API_KEY;
-const secretKey = process.env.MEXC_SECRET_KEY;
+        <!-- Loading State -->
+        <div id="loading-state" class="text-center py-10">
+            <div class="loader mx-auto"></div>
+            <p class="mt-4 text-gray-400">جاري جلب البيانات المطورة من الخادم الآمن...</p>
+        </div>
 
-// --- Middleware ---
-app.use(cors());
-app.use(express.static(__dirname));
+        <!-- Error State -->
+        <div id="error-state" class="card p-6 text-center hidden">
+             <p id="error-message" class="text-red-400"></p>
+        </div>
 
-// --- Helper Functions ---
-async function getAllTickers() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/v1/contract/ticker`);
-        if (!response.ok) return {};
-        const data = await response.json();
-        if (!data.success || !Array.isArray(data.data)) return {};
-        // Create a map for quick lookups: { "SYMBOL": { full_ticker_data }}
-        return data.data.reduce((map, ticker) => {
-            map[ticker.symbol] = ticker;
-            return map;
-        }, {});
-    } catch (error) {
-        console.error(`Could not fetch all tickers:`, error.message);
-        return {};
-    }
-}
+        <!-- Dashboard Section -->
+        <div id="dashboard-section" class="hidden space-y-8">
+            <!-- KPIs -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
+                <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">إجمالي قيمة المحفظة (USDT)</h3><p id="total-balance" class="text-3xl font-bold text-white mt-2">--.--</p></div>
+                <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">قيمة الأصول (USDT)</h3><p id="assets-value" class="text-3xl font-bold text-white mt-2">--.--</p></div>
+                <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">عدد المراكز المفتوحة</h3><p id="open-positions-count" class="text-3xl font-bold mt-2">--</p></div>
+            </div>
 
-// --- Main API Route ---
-app.get('/api/portfolio-data', async (req, res) => {
-    if (!apiKey || !secretKey) {
-        return res.status(500).json({ error: 'لم يتم إعداد مفاتيح API على الخادم بشكل صحيح.' });
-    }
+            <!-- Open Positions -->
+            <div>
+                <h2 class="text-2xl font-bold text-white mb-4">المراكز المفتوحة حالياً</h2>
+                <div class="card overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-right min-w-[800px]"><thead class="bg-gray-800 text-gray-300"><tr><th class="p-4 rounded-tr-lg">الرمز</th><th class="p-4">النوع</th><th class="p-4">الرافعة</th><th class="p-4">سعر الدخول</th><th class="p-4">السعر الحالي</th><th class="p-4">الربح/الخسارة (USDT)</th><th class="p-4 rounded-tl-lg">الربح/الخسارة (%)</th></tr></thead><tbody id="open-positions-body"></tbody></table>
+                </div>
+            </div>
 
-    try {
-        const [allTickers, accountAssetsResponse, openPositionsResponse, historyDealsResponse] = await Promise.all([
-            getAllTickers(),
-            makeRequest('/api/v1/private/account/assets'),
-            makeRequest('/api/v1/private/position/open_positions'),
-            makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 })
-        ]);
+             <!-- Trade History -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-white mb-4">أفضل 3 صفقات رابحة</h2>
+                    <div id="best-trades-container" class="card p-4 space-y-3">
+                        <!-- Best trades will be inserted here -->
+                    </div>
+                </div>
+                <div>
+                    <h2 class="text-2xl font-bold text-white mb-4">أسوأ 3 صفقات خاسرة</h2>
+                    <div id="worst-trades-container" class="card p-4 space-y-3">
+                       <!-- Worst trades will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+         <footer class="text-center text-gray-500 text-sm pt-4">
+            يتم تحديث البيانات كل 60 ثانية.
+        </footer>
+    </div>
 
-        // 1. Calculate Available Balance
-        let availableBalance = 0;
-        if (accountAssetsResponse.success && Array.isArray(accountAssetsResponse.data)) {
-            const usdtAsset = accountAssetsResponse.data.find(asset => asset.currency === "USDT");
-            if (usdtAsset) {
-                availableBalance = parseFloat(usdtAsset.availableBalance || 0);
+    <script>
+        const UI = {
+            loadingState: document.getElementById('loading-state'),
+            errorState: document.getElementById('error-state'),
+            errorMessage: document.getElementById('error-message'),
+            dashboardSection: document.getElementById('dashboard-section'),
+            totalBalanceElem: document.getElementById('total-balance'),
+            assetsValueElem: document.getElementById('assets-value'),
+            openPositionsCountElem: document.getElementById('open-positions-count'),
+            openPositionsBody: document.getElementById('open-positions-body'),
+            bestTradesContainer: document.getElementById('best-trades-container'),
+            worstTradesContainer: document.getElementById('worst-trades-container'),
+        };
+
+        // *** THIS IS THE CRITICAL FIX ***
+        // A safe function to format numbers that checks for null/undefined first.
+        function safeFormat(value, options = { minimumFractionDigits: 2, maximumFractionDigits: 2 }) {
+            if (typeof value !== 'number' || isNaN(value)) {
+                return '--.--'; // Return a placeholder if the value is not a valid number
+            }
+            return value.toLocaleString('ar-EG', options);
+        }
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/portfolio-data'); 
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'فشل في قراءة استجابة الخادم.' }));
+                    throw new Error(errorData.error || `خطأ من الخادم: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                updateDashboard(data);
+
+                UI.loadingState.classList.add('hidden');
+                UI.errorState.classList.add('hidden');
+                UI.dashboardSection.classList.remove('hidden');
+
+            } catch (error) {
+                console.error('Error:', error);
+                UI.loadingState.classList.add('hidden');
+                UI.errorMessage.textContent = `فشل في عرض البيانات. السبب: ${error.message}`;
+                UI.errorState.classList.remove('hidden');
+                UI.dashboardSection.classList.add('hidden');
             }
         }
 
-        // 2. Process Open Positions with UNIFIED manual calculation
-        let openPositions = [];
-        let totalMarginInPositions = 0;
-        let totalUnrealizedPNL = 0;
+        function updateDashboard(data) {
+            // Use the safeFormat function for all number displays
+            UI.totalBalanceElem.textContent = safeFormat(data.totalBalance);
+            UI.assetsValueElem.textContent = safeFormat(data.assetsValue);
+            UI.openPositionsCountElem.textContent = safeFormat(data.openPositionsCount, { minimumFractionDigits: 0 });
 
-        if (openPositionsResponse.success && Array.isArray(openPositionsResponse.data) && openPositionsResponse.data.length > 0) {
-            totalMarginInPositions = openPositionsResponse.data.reduce((sum, pos) => sum + parseFloat(pos.im || 0), 0);
-
-            for (const pos of openPositionsResponse.data) {
-                const ticker = allTickers[pos.symbol];
-                const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
-                
-                const openPrice = parseFloat(pos.holdAvgPrice);
-                const positionSize = parseFloat(pos.holdVol);
-                const contractSize = parseFloat(pos.contractSize);
-                const pnlDirection = pos.positionType === 1 ? 1 : -1; // 1 for Long, -1 for Short
-                
-                // UNIFIED PNL CALCULATION for open positions
-                const calculatedPNL = (currentPrice > 0) ? (currentPrice - openPrice) * positionSize * contractSize * pnlDirection : 0;
-                totalUnrealizedPNL += calculatedPNL;
-                
-                const margin = parseFloat(pos.im) || 1; // Avoid division by zero
-                const pnlPercentage = (calculatedPNL / margin) * 100;
-                
-                openPositions.push({
-                    symbol: pos.symbol,
-                    positionType: pos.positionType === 1 ? 'Long' : 'Short',
-                    leverage: pos.leverage,
-                    openPrice: openPrice,
-                    currentPrice: currentPrice,
-                    unrealizedPNL: calculatedPNL,
-                    pnlPercentage: pnlPercentage
+            // Update Open Positions Table
+            UI.openPositionsBody.innerHTML = ''; 
+            if (data.openPositions && data.openPositions.length > 0) {
+                 data.openPositions.forEach(pos => {
+                    const pnlClass = pos.unrealizedPNL >= 0 ? 'positive' : 'negative';
+                    const row = document.createElement('tr');
+                    row.className = 'border-b border-gray-700 hover:bg-gray-800';
+                    row.innerHTML = `
+                        <td class="p-4 font-medium text-white">${pos.symbol}</td>
+                        <td class="p-4 ${pos.positionType === 'Long' ? 'positive' : 'negative'}">${pos.positionType === 'Long' ? 'شراء' : 'بيع'}</td>
+                        <td class="p-4">${pos.leverage}x</td>
+                        <td class="p-4">${safeFormat(pos.openPrice, {maximumFractionDigits: 5})}</td>
+                        <td class="p-4">${safeFormat(pos.currentPrice, {maximumFractionDigits: 5})}</td>
+                        <td class="p-4 font-bold ${pnlClass}">${safeFormat(pos.unrealizedPNL)}</td>
+                        <td class="p-4 font-bold ${pnlClass}">${safeFormat(pos.pnlPercentage)}%</td>
+                    `;
+                    UI.openPositionsBody.appendChild(row);
                 });
+            } else {
+                 UI.openPositionsBody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-gray-400">لا توجد مراكز مفتوحة حالياً.</td></tr>`;
+            }
+
+            // Update Best Trades
+            UI.bestTradesContainer.innerHTML = '';
+             if (data.bestTrades && data.bestTrades.length > 0) {
+                data.bestTrades.forEach(trade => {
+                    const tradeDiv = document.createElement('div');
+                    tradeDiv.className = 'flex justify-between items-center bg-gray-800 p-3 rounded';
+                    tradeDiv.innerHTML = `
+                        <div>
+                            <p class="font-bold text-white">${trade.symbol}</p>
+                            <p class="text-sm text-gray-400">${trade.date}</p>
+                        </div>
+                        <p class="font-bold positive">+${safeFormat(trade.pnl)} USDT</p>
+                    `;
+                    UI.bestTradesContainer.appendChild(tradeDiv);
+                });
+            } else {
+                 UI.bestTradesContainer.innerHTML = `<p class="text-center text-gray-400 p-4">لا توجد بيانات كافية.</p>`;
+            }
+
+            // Update Worst Trades
+            UI.worstTradesContainer.innerHTML = '';
+            if (data.worstTrades && data.worstTrades.length > 0) {
+                data.worstTrades.forEach(trade => {
+                    const tradeDiv = document.createElement('div');
+                    tradeDiv.className = 'flex justify-between items-center bg-gray-800 p-3 rounded';
+                    tradeDiv.innerHTML = `
+                        <div>
+                            <p class="font-bold text-white">${trade.symbol}</p>
+                            <p class="text-sm text-gray-400">${trade.date}</p>
+                        </div>
+                        <p class="font-bold negative">${safeFormat(trade.pnl)} USDT</p>
+                    `;
+                    UI.worstTradesContainer.appendChild(tradeDiv);
+                });
+            } else {
+                UI.worstTradesContainer.innerHTML = `<p class="text-center text-gray-400 p-4">لا توجد بيانات كافية.</p>`;
             }
         }
-        
-        // 3. Calculate Total Equity
-        const totalBalance = availableBalance + totalMarginInPositions + totalUnrealizedPNL;
-        
-        // 4. Process Trade History with UNIFIED manual calculation
-        let bestTrades = [], worstTrades = [];
-        if (historyDealsResponse.success && historyDealsResponse.data && Array.isArray(historyDealsResponse.data.resultList)) {
-            const closedTrades = historyDealsResponse.data.resultList
-                // Filter for fully closed orders that have the necessary data
-                .filter(order => order.state === 3 && order.dealAvgPrice && order.openAvgPrice && order.vol && order.contractSize)
-                .map(order => {
-                    const openPrice = parseFloat(order.openAvgPrice);
-                    const closePrice = parseFloat(order.dealAvgPrice);
-                    const positionSize = parseFloat(order.vol);
-                    const contractSize = parseFloat(order.contractSize);
-                    const pnlDirection = order.openType === 1 ? 1 : -1; // 1 for Long, -1 for Short
-                    
-                    // UNIFIED PNL CALCULATION for closed trades
-                    const calculatedPnl = (closePrice - openPrice) * positionSize * contractSize * pnlDirection;
-                    
-                    return {
-                        symbol: order.symbol, 
-                        pnl: calculatedPnl, 
-                        date: order.updateTime ? new Date(order.updateTime).toLocaleDateString('ar-EG') : 'N/A'
-                    };
-                });
 
-            closedTrades.sort((a, b) => b.pnl - a.pnl); // Sort by PNL descending
-            bestTrades = closedTrades.slice(0, 3);
-            worstTrades = closedTrades.filter(t => t.pnl < 0).slice(-3).reverse();
-        }
-
-        // 5. Send Final Data
-        res.json({
-            totalBalance: totalBalance,
-            assetsValue: totalMarginInPositions,
-            openPositionsCount: openPositions.length,
-            openPositions: openPositions,
-            bestTrades: bestTrades,
-            worstTrades: worstTrades
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchData();
+            setInterval(fetchData, 60000); 
         });
-
-    } catch (error) {
-        console.error('A critical error occurred in the main route:', error);
-        res.status(500).json({ error: `خطأ حرج في الخادم: ${error.message}` });
-    }
-});
-
-// --- Serve the HTML file ---
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-// --- API Request Helper with Timeout ---
-async function makeRequest(endpoint, params = {}) {
-    const timestamp = Date.now();
-    const queryString = new URLSearchParams(params).toString();
-    const toSign = `${apiKey}${timestamp}${queryString}`;
-    const signature = CryptoJS.HmacSHA256(toSign, secretKey).toString(CryptoJS.enc.Hex);
-    let url = `${API_BASE_URL}${endpoint}`;
-    if (queryString) {
-        url += `?${queryString}`;
-    }
-    
-    const controller = new AbortController();
-    const timeout = setTimeout(() => { controller.abort(); }, REQUEST_TIMEOUT);
-
-    try {
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json', 'ApiKey': apiKey, 'Request-Time': timestamp, 'Signature': signature },
-            signal: controller.signal
-        });
-        const text = await response.text();
-        if (!response.ok) throw new Error(`MEXC request failed with status ${response.status}: ${text}`);
-        const jsonResponse = JSON.parse(text);
-        if (jsonResponse.code !== 0) throw new Error(`MEXC API Error (${jsonResponse.code}): ${jsonResponse.msg}`);
-        return { success: true, data: jsonResponse.data };
-    } catch (error) {
-        if (error.name === 'AbortError') return { success: false, error: 'Request timed out' };
-        return { success: false, error: error.message };
-    } finally {
-        clearTimeout(timeout);
-    }
-}
-
-// --- Start Server ---
-app.listen(port, () => {
-    console.log(`Server listening at port ${port}`);
-});
+    </script>
+</body>
+</html>
 
