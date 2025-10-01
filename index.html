@@ -1,8 +1,10 @@
 <!DOCTYPE html>
+<!-- The lang and dir attributes will be set by JavaScript -->
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- The title will be set by JavaScript -->
     <title>قمرة قيادة: فضائي مجهول</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- THREE.js - The 3D Engine -->
@@ -41,9 +43,18 @@
             padding: 0;
             width: 100vw;
             height: 100vh;
-            overflow: hidden;
+            overflow: hidden; /* Prevent scrolling */
         }
-        #three-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        /* The 3D Canvas will be in the background */
+        #three-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        /* The HUD interface will be on top */
         #hud-container {
             position: relative;
             z-index: 2;
@@ -54,6 +65,10 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
+            pointer-events: none; /* Make container click-through */
+        }
+        #hud-container > * {
+             pointer-events: auto; /* Re-enable pointer events for children */
         }
         .hud-panel {
             width: 100%;
@@ -66,13 +81,20 @@
             backdrop-filter: blur(10px);
             clip-path: polygon(0 20px, 20px 0, calc(100% - 20px) 0, 100% 20px, 100% calc(100% - 20px), calc(100% - 20px) 100%, 20px 100%, 0 calc(100% - 20px));
         }
-        .hud-title { font-family: 'Orbitron', sans-serif; color: var(--hud-border); text-transform: uppercase; letter-spacing: 3px; text-shadow: 0 0 8px var(--hud-border); }
+        .hud-title {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--hud-border);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            text-shadow: 0 0 8px var(--hud-border);
+        }
         .data-item { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px dashed rgba(0, 246, 255, 0.2); }
         .data-item span:first-child { color: var(--text-secondary); }
         .loader {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10;
             text-align: center; color: var(--hud-border); font-family: 'Orbitron', sans-serif;
         }
+        /* AI message bubble */
         #ai-message-bubble {
             position: fixed;
             background: var(--hud-bg);
@@ -86,7 +108,13 @@
             opacity: 0;
             transition: opacity 0.5s, transform 0.5s;
             z-index: 5;
-            pointer-events: none;
+            pointer-events: none; /* So it doesn't block clicks */
+        }
+        table {
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 0.5rem;
         }
     </style>
 </head>
@@ -131,37 +159,48 @@
     </div>
 
     <script type="module">
+        // --- [ 3D COMPANION & GAME ENGINE ] ---
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+        // --- GAME ENGINE STATE ---
         let scene, camera, renderer, model, mixer, clock;
         let animations = {};
         const companionState = {
             mood: 'Idle',
-            targetPosition: new THREE.Vector3(0, 0, 0),
+            targetPosition: new THREE.Vector3(0, -1, 0), // Default position
             isMoving: false,
         };
 
+        // --- INITIALIZATION ---
         function init3D() {
             scene = new THREE.Scene();
             clock = new THREE.Clock();
+
+            // Camera
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.z = 5;
 
+            // Renderer
             const canvas = document.getElementById('three-canvas');
             renderer = new THREE.WebGLRenderer({ canvas, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
 
+            // Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
             scene.add(ambientLight);
             const directionalLight = new THREE.DirectionalLight(0x00f6ff, 3);
             directionalLight.position.set(5, 5, 5);
             scene.add(directionalLight);
+            const pointLight = new THREE.PointLight(0xff00c1, 5, 10);
+            pointLight.position.set(-5, -5, 2);
+            scene.add(pointLight);
             
+            // Load Model
             const loader = new GLTFLoader();
             loader.load(
-                'https://assets.mixkit.co/models/preview/212/212-original.glb',
+                'https://assets.mixkit.co/models/preview/212/212-original.glb', // A cute, animated robot model
                 function (gltf) {
                     model = gltf.scene;
                     model.scale.set(0.4, 0.4, 0.4);
@@ -169,22 +208,44 @@
                     scene.add(model);
                     
                     mixer = new THREE.AnimationMixer(model);
-                    const animMap = { 'Idle': 'Idle', 'Happy': 'Walk', 'Celebrating': 'Yes', 'Sad': 'No', 'Worried': 'Survey', 'Sleeping': 'Death' };
+                    // Map animation names from the model to our moods
+                    const animMap = {
+                        'Idle': 'Idle',
+                        'Happy': 'Walk',
+                        'Celebrating': 'Yes',
+                        'Sad': 'No',
+                        'Worried': 'Survey',
+                        'Sleeping': 'Death' // Using 'Death' animation for sleeping
+                    };
+
                     gltf.animations.forEach(clip => {
                         for (const [mood, animName] of Object.entries(animMap)) {
+                            // Check if clip name includes the mapped animation name (case-insensitive)
                             if (clip.name.toLowerCase().includes(animName.toLowerCase())) {
                                 animations[mood] = mixer.clipAction(clip);
                             }
                         }
                     });
+
+                    // If some animations are missing, assign Idle to them as a fallback
+                    for (const mood of Object.keys(animMap)) {
+                        if (!animations[mood]) {
+                            console.warn(`Animation for mood '${mood}' not found. Using 'Idle' as fallback.`);
+                            animations[mood] = animations['Idle'];
+                        }
+                    }
+
                     setAIAction('Idle');
+                    
+                    // Start the animation loop
                     animate();
                 },
-                undefined,
+                undefined, // onProgress callback not needed
                 function (error) {
-                    console.error('3D Model Error:', error);
+                    console.error('An error happened while loading the 3D model:', error);
                 }
             );
+
             window.addEventListener('resize', onWindowResize, false);
         }
 
@@ -194,86 +255,235 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        // --- AI BEHAVIOR ---
         function setAIAction(mood) {
             if (companionState.mood === mood || !animations[mood]) return;
+            
             const newAction = animations[mood];
             const oldAction = animations[companionState.mood];
             companionState.mood = mood;
-            if (oldAction) oldAction.fadeOut(0.5);
-            newAction.reset().setLoop(THREE.LoopRepeat).fadeIn(0.5).play();
+
+            if (oldAction) {
+                oldAction.fadeOut(0.5);
+            }
+            
+            newAction.reset();
+            newAction.setLoop(THREE.LoopRepeat);
+            newAction.fadeIn(0.5).play();
         }
         
         function updateAITarget(selector) {
             const targetElement = document.querySelector(selector);
-            if (!targetElement) return;
+            if (!targetElement) {
+                // Default to center if target not found
+                companionState.targetPosition.set(0, -1, 0);
+                companionState.isMoving = true;
+                return;
+            };
+
             const rect = targetElement.getBoundingClientRect();
+            // Convert screen coordinates to 3D world coordinates
             const x = (rect.left + rect.width / 2) / window.innerWidth * 2 - 1;
             const y = -(rect.top + rect.height / 2) / window.innerHeight * 2 + 1;
+            
             const vector = new THREE.Vector3(x, y, 0.5);
+            // unproject the vector to get the 3D world coordinates
             vector.unproject(camera);
             const dir = vector.sub(camera.position).normalize();
             const distance = -camera.position.z / dir.z;
-            companionState.targetPosition = camera.position.clone().add(dir.multiplyScalar(distance));
-            companionState.targetPosition.y -= 1; // Adjust Y position
+            const newPos = camera.position.clone().add(dir.multiplyScalar(distance));
+            
+            // Add some randomness to the position to make it more natural
+            newPos.x += (Math.random() - 0.5) * 2;
+            newPos.y -= 1; // Position it slightly below the element
+
+            companionState.targetPosition.copy(newPos);
             companionState.isMoving = true;
         }
 
+        // --- ANIMATION LOOP ---
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
             if (mixer) mixer.update(delta);
+
             if (model) {
+                // Smoothly move the model towards the target
                 if (companionState.isMoving) {
                     model.position.lerp(companionState.targetPosition, 0.05);
-                    const targetQuaternion = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(model.position, companionState.targetPosition, model.up));
-                    model.quaternion.slerp(targetQuaternion, 0.1);
+
+                    // If close enough, stop moving
                     if (model.position.distanceTo(companionState.targetPosition) < 0.2) {
                         companionState.isMoving = false;
                     }
                 }
+
+                // Smoothly look at the target (or a point in front if not moving)
+                const lookAtTarget = new THREE.Vector3();
+                if (companionState.isMoving) {
+                    lookAtTarget.copy(companionState.targetPosition);
+                } else {
+                    // Look slightly towards the center screen
+                    const centerScreenTarget = new THREE.Vector3(0, model.position.y, 5);
+                    lookAtTarget.lerp(centerScreenTarget, 0.1);
+                }
+                
+                const targetQuaternion = new THREE.Quaternion();
+                const tempMatrix = new THREE.Matrix4();
+                tempMatrix.lookAt(model.position, lookAtTarget, model.up);
+                targetQuaternion.setFromRotationMatrix(tempMatrix);
+                model.quaternion.slerp(targetQuaternion, 0.1);
+
+                
+                // Update AI message bubble position
                 const bubble = document.getElementById('ai-message-bubble');
                 const vector = new THREE.Vector3();
+                // Get the position of the head of the model for the bubble
+                // This is an approximation, you might need to adjust the 'y' value
                 model.getWorldPosition(vector);
+                vector.y += 1.5; // Adjust bubble height relative to the model's center
+                
                 vector.project(camera);
-                bubble.style.transform = `translate(${(vector.x * 0.5 + 0.5) * window.innerWidth}px, ${(vector.y * -0.5 + 0.5) * window.innerHeight - 120}px) translate(-50%)`;
+
+                const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
+
+                bubble.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
             }
+
             renderer.render(scene, camera);
         }
 
+        // --- [ HUD & DATA LOGIC ] ---
         const UI = {};
+        let currentLang = 'ar';
         const translations = {
-            ar: { loading: "...جاري تحميل العالم", mainTitle: "فضائي مجهول", mainSubtitle: "واجهة المحفظة", currentInfo: "المعلومات الحالية", totalEquity: "إجمالي القيمة", activeMissions: "المهمات النشطة", tradingLog: "سجل التداول", bestTradeLabel: "أفضل مهمة:", worstTradeLabel: "مناورة خطرة:", logEmpty: "السجل فارغ", missionsTable: { mission: "المهمة", type: "النوع", leverage: "الرافعة", entry: "الدخول", current: "الحالي", pnl_cr: "الربح (CR)", pnl_pct: "الربح (%)" }, noActiveMissions: "لا توجد مهمات نشطة", long: "شراء", short: "بيع", errorPrefix: "فشل الاتصال:" },
-            en: { loading: "...Loading World", mainTitle: "UNKNOWN ALIEN", mainSubtitle: "PORTFOLIO INTERFACE", currentInfo: "CURRENT INFO", totalEquity: "Total Equity", activeMissions: "Active Missions", tradingLog: "TRADING LOG", bestTradeLabel: "BEST TRADE:", worstTradeLabel: "WORST TRADE:", logEmpty: "LOG EMPTY", missionsTable: { mission: "MISSION", type: "TYPE", leverage: "LEVERAGE", entry: "ENTRY", current: "CURRENT", pnl_cr: "PNL (CR)", pnl_pct: "PNL (%)" }, noActiveMissions: "NO ACTIVE MISSIONS", long: "LONG", short: "SHORT", errorPrefix: "Connection Failed:" }
+            ar: {
+                docTitle: "قمرة قيادة: فضائي مجهول",
+                loading: "...جاري تحميل العالم",
+                mainTitle: "فضائي مجهول",
+                mainSubtitle: "واجهة المحفظة",
+                currentInfo: "المعلومات الحالية",
+                totalEquity: "إجمالي القيمة",
+                activeMissions: "المهمات النشطة",
+                tradingLog: "سجل التداول",
+                bestTradeLabel: "أفضل مهمة:",
+                worstTradeLabel: "مناورة خطرة:",
+                logEmpty: "السجل فارغ",
+                missionsTable: {
+                    mission: "المهمة",
+                    type: "النوع",
+                    leverage: "الرافعة",
+                    entry: "الدخول",
+                    current: "الحالي",
+                    pnl_cr: "الربح (CR)",
+                    pnl_pct: "الربح (%)"
+                },
+                noActiveMissions: "لا توجد مهمات نشطة",
+                long: "شراء",
+                short: "بيع",
+                errorPrefix: "فشل الاتصال:"
+            },
+            en: {
+                docTitle: "Cockpit: Unknown Alien",
+                loading: "...Loading World",
+                mainTitle: "UNKNOWN ALIEN",
+                mainSubtitle: "PORTFOLIO INTERFACE",
+                currentInfo: "CURRENT INFO",
+                totalEquity: "Total Equity",
+                activeMissions: "Active Missions",
+                tradingLog: "TRADING LOG",
+                bestTradeLabel: "BEST TRADE:",
+                worstTradeLabel: "WORST TRADE:",
+                logEmpty: "LOG EMPTY",
+                missionsTable: {
+                    mission: "MISSION",
+                    type: "TYPE",
+                    leverage: "LEVERAGE",
+                    entry: "ENTRY",
+                    current: "CURRENT",
+                    pnl_cr: "PNL (CR)",
+                    pnl_pct: "PNL (%)"
+                },
+                noActiveMissions: "NO ACTIVE MISSIONS",
+                long: "LONG",
+                short: "SHORT",
+                errorPrefix: "Connection Failed:"
+            }
         };
 
         document.addEventListener('DOMContentLoaded', () => {
             const uiIds = ['loading-state', 'hud-container', 'ai-message-bubble', 'total-balance', 'open-positions-count', 'best-trades-body', 'worst-trades-body', 'positions-table'];
-            uiIds.forEach(id => UI[id.replace(/-./g, m => m[1].toUpperCase())] = document.getElementById(id));
-            setLanguage(navigator.language.startsWith('ar') ? 'ar' : 'en');
+            uiIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    UI[id.replace(/-./g, m => m[1].toUpperCase())] = el;
+                }
+            });
+            // Also select elements with data-lang attribute
+            document.querySelectorAll('[data-lang]').forEach(el => {
+                const key = el.getAttribute('data-lang');
+                UI[key] = el;
+            });
+            
+            const initialLang = navigator.language.startsWith('ar') ? 'ar' : 'en';
+            setLanguage(initialLang);
+            
             init3D();
+            
             fetchAllData();
             setInterval(fetchAllData, 60000); 
         });
 
         function formatNumber(num, decimals = 2) {
-            return (typeof num === 'number' && !isNaN(num)) ? num.toFixed(decimals) : '--.--';
+            if (typeof num === 'number' && !isNaN(num)) {
+                return num.toFixed(decimals);
+            }
+            return '--.--';
         }
 
-        function setLanguage(lang) { /* ... (same as before but using the full translations object) ... */ }
+        function setLanguage(lang) {
+            currentLang = lang;
+            document.documentElement.lang = lang;
+            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+            document.title = translations[lang].docTitle;
+            
+            // Translate all elements with data-lang attribute
+            document.querySelectorAll('[data-lang]').forEach(el => {
+                const key = el.getAttribute('data-lang');
+                if (translations[lang][key]) {
+                    el.textContent = translations[lang][key];
+                }
+            });
+        }
 
         async function fetchAllData() {
             try {
                 const portfolioRes = await fetch('/api/portfolio-data');
-                if (!portfolioRes.ok) throw new Error((await portfolioRes.json()).error);
+                if (!portfolioRes.ok) {
+                    const errorData = await portfolioRes.json();
+                    throw new Error(errorData.error || 'Failed to fetch portfolio data');
+                }
                 const portfolioData = await portfolioRes.json();
+                
+                // Update the regular dashboard elements
                 updateDashboard(portfolioData);
-                setAIAction(portfolioData.aiState.mood);
-                updateAITarget(portfolioData.aiState.targetSelector);
-                UI.aiMessageBubble.textContent = portfolioData.aiState.message;
-                UI.aiMessageBubble.style.opacity = 1;
-                setTimeout(() => { UI.aiMessageBubble.style.opacity = 0; }, 5000);
+
+                // --- NEW: Update the AI companion's state ---
+                if (portfolioData.aiState) {
+                    setAIAction(portfolioData.aiState.mood);
+                    updateAITarget(portfolioData.aiState.targetSelector);
+                    const bubble = document.getElementById('ai-message-bubble');
+                    bubble.textContent = portfolioData.aiState.message;
+                    bubble.style.opacity = 1;
+                    // Message disappears after 5 seconds
+                    setTimeout(() => { bubble.style.opacity = 0; }, 5000); 
+                }
+
+                // Hide loading screen and show the main interface
                 UI.loadingState.classList.add('hidden');
                 UI.hudContainer.classList.remove('hidden');
+
             } catch (error) {
                 console.error("Frontend Error:", error);
                 UI.loadingState.classList.add('hidden');
@@ -289,15 +499,46 @@
             const t = translations[currentLang];
             UI.totalBalance.textContent = `$${formatNumber(data.totalBalance)}`;
             UI.openPositionsCount.textContent = data.openPositionsCount;
-            UI.bestTradesBody.innerHTML = (data.bestTrades && data.bestTrades.length > 0) ? data.bestTrades.map(trade => `<div class="data-item text-xs"><span class="text-green-400">${t.bestTradeLabel} ${trade.symbol}</span><span>+${formatNumber(trade.profit)} CR</span></div>`).join('') : `<div class="data-item text-xs"><span>${t.tradingLog}</span><span>${t.logEmpty}</span></div>`;
-            UI.worstTradesBody.innerHTML = (data.worstTrades && data.worstTrades.length > 0) ? data.worstTrades.map(trade => `<div class="data-item text-xs"><span class="text-red-400">${t.worstTradeLabel} ${trade.symbol}</span><span>${formatNumber(trade.profit)} CR</span></div>`).join('') : '';
+            
+            // Update Trading Log
+            UI.bestTradesBody.innerHTML = (data.bestTrades && data.bestTrades.length > 0)
+                ? data.bestTrades.map(trade => `<div class="data-item text-xs"><span class="text-green-400">${t.bestTradeLabel} ${trade.symbol}</span><span>+${formatNumber(trade.profit)} CR</span></div>`).join('')
+                : `<div class="data-item text-xs"><span>${t.tradingLog}</span><span>${t.logEmpty}</span></div>`;
+            UI.worstTradesBody.innerHTML = (data.worstTrades && data.worstTrades.length > 0)
+                ? data.worstTrades.map(trade => `<div class="data-item text-xs"><span class="text-red-400">${t.worstTradeLabel} ${trade.symbol}</span><span>${formatNumber(trade.profit)} CR</span></div>`).join('')
+                : '';
+
+            // Update Positions Table
             const tbl = t.missionsTable;
-            UI.positionsTable.innerHTML = `<thead><tr class="text-gray-400 border-b border-[var(--border-color)]"><th class="p-2">${tbl.mission}</th><th class="p-2">${tbl.type}</th><th class="p-2">${tbl.leverage}</th><th class="p-2">${tbl.entry}</th><th class="p-2">${tbl.current}</th><th class="p-2">${tbl.pnl_cr}</th><th class="p-2">${tbl.pnl_pct}</th></tr></thead><tbody id="positions-body"></tbody>`;
+            UI.positionsTable.innerHTML = `
+                <thead>
+                    <tr class="text-gray-400 border-b border-[var(--border-color)]">
+                        <th class="p-2">${tbl.mission}</th>
+                        <th class="p-2">${tbl.type}</th>
+                        <th class="p-2">${tbl.leverage}</th>
+                        <th class="p-2">${tbl.entry}</th>
+                        <th class="p-2">${tbl.current}</th>
+                        <th class="p-2">${tbl.pnl_cr}</th>
+                        <th class="p-2">${tbl.pnl_pct}</th>
+                    </tr>
+                </thead>
+                <tbody id="positions-body"></tbody>
+            `;
             const positionsBody = document.getElementById('positions-body');
             if (data.openPositions && data.openPositions.length > 0) {
                  data.openPositions.forEach(pos => {
                     const pnlClass = pos.pnl >= 0 ? 'text-green-400' : 'text-red-400';
-                    positionsBody.innerHTML += `<tr class="border-b border-dashed border-[var(--border-color)]/20"><td class="p-2 font-bold">${pos.symbol}</td><td class="p-2 ${pnlClass}">${pos.positionType === 'Long' ? t.long : t.short}</td><td class="p-2">${pos.leverage}x</td><td class="p-2">${formatNumber(pos.entryPrice, 4)}</td><td class="p-2">${formatNumber(pos.currentPrice, 4)}</td><td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnl)}</td><td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnlPercentage)}%</td></tr>`;
+                    positionsBody.innerHTML += `
+                        <tr class="border-b border-dashed border-[var(--border-color)]/20">
+                            <td class="p-2 font-bold">${pos.symbol}</td>
+                            <td class="p-2 ${pnlClass}">${pos.positionType === 'Long' ? t.long : t.short}</td>
+                            <td class="p-2">${pos.leverage}x</td>
+                            <td class="p-2">${formatNumber(pos.entryPrice, 4)}</td>
+                            <td class="p-2">${formatNumber(pos.currentPrice, 4)}</td>
+                            <td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnl)}</td>
+                            <td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnlPercentage)}%</td>
+                        </tr>
+                    `;
                 });
             } else {
                  positionsBody.innerHTML = `<tr><td colspan="7" class="text-center p-4 text-gray-500">${t.noActiveMissions}</td></tr>`;
