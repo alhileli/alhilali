@@ -1,206 +1,153 @@
-// --- Dependencies ---
-const express = require('express');
-const fetch = require('node-fetch');
-const CryptoJS = require('crypto-js');
-const cors = require('cors');
-const path = require('path');
-require('dotenv').config();
+// -----------------------------------------------------------------------------
+// |                            MEXC PORTFOLIO SERVER                          |
+// |                      VERSION: Definitive (Correct History)                |
+// |     This version fixes the issue of historical trades not appearing      |
+// |      by using the correct API endpoint for futures trade history.        |
+// -----------------------------------------------------------------------------
 
-// --- Configuration ---
+// استيراد المكتبات الضرورية
+// We are importing the necessary libraries.
+import express from 'express';
+import crypto from 'crypto';
+import fetch from 'node-fetch';
+import cors from 'cors';
+
+// إعداد الخادم
+// Setting up the Express server.
 const app = express();
-const port = process.env.PORT || 3000;
-const API_BASE_URL = 'https://contract.mexc.com';
-const REQUEST_TIMEOUT = 30000; // 30 seconds timeout
+const PORT = process.env.PORT || 10000;
+app.use(cors());
+app.use(express.static('public')); // This line is for serving the frontend if in the same project.
 
-// --- API Keys ---
+// استرداد مفاتيح API بأمان من متغيرات البيئة
+// Securely getting API keys from environment variables.
 const apiKey = process.env.MEXC_API_KEY;
 const secretKey = process.env.MEXC_SECRET_KEY;
 
-// --- Middleware ---
-app.use(cors());
-app.use(express.static(__dirname));
+// URLs الخاصة بمنصة MEXC للعقود الآجلة
+// URLs for MEXC Futures API.
+const BASE_URL = 'https://contract.mexc.com';
+const ASSETS_ENDPOINT = '/api/v1/private/account/assets';
+const POSITIONS_ENDPOINT = '/api/v1/private/position/open_positions';
+const HISTORY_ENDPOINT = '/api/v1/private/order/list/history_orders'; // <-- The CORRECT endpoint for futures history
+const TICKER_ENDPOINT = '/api/v1/contract/ticker';
+const CONTRACT_DETAILS_ENDPOINT = '/api/v1/contract/detail';
 
-// --- Cache for contract details to avoid repeated API calls ---
-const contractDetailsCache = new Map();
+// دالة لإنشاء التوقيع الرقمي
+// Function to create the digital signature required by the API.
+function createSignature(timestamp, params = '') {
+    const signaturePayload = apiKey + timestamp + params;
+    return crypto.createHmac('sha256', secretKey).update(signaturePayload).digest('hex');
+}
 
-// --- Robust Helper Functions ---
-const safeParseFloat = (value) => {
-    const num = parseFloat(value);
-    return isNaN(num) ? 0 : num;
-};
+// دالة لإجراء طلبات API بشكل آمن
+// A generic function to make secure API requests.
+async function makeRequest(method, endpoint, params = '') {
+    const timestamp = Date.now().toString();
+    const signature = createSignature(timestamp, params);
+    const url = `${BASE_URL}${endpoint}${params ? '?' + params : ''}`;
 
-async function getContractDetails(symbol) {
-    if (contractDetailsCache.has(symbol)) {
-        return contractDetailsCache.get(symbol);
-    }
+    const headers = {
+        'Content-Type': 'application/json',
+        'ApiKey': apiKey,
+        'Request-Time': timestamp,
+        'Signature': signature,
+    };
+
     try {
-        const response = await fetch(`${API_BASE_URL}/api/v1/contract/detail?symbol=${symbol}`);
-        if (!response.ok) return null;
-        const data = await response.json();
-        if (data.success && data.data) {
-            contractDetailsCache.set(symbol, data.data);
-            return data.data;
+        const response = await fetch(url, { method, headers, timeout: 30000 }); // Increased timeout to 30s
+        if (!response.ok) {
+            const errorBody = await response.json();
+            console.error(`API Error on ${endpoint}:`, errorBody);
+            throw new Error(errorBody.msg || `Request failed with status ${response.status}`);
         }
-        return null;
+        return await response.json();
     } catch (error) {
-        console.error(`Could not fetch contract details for ${symbol}:`, error.message);
-        return null;
+        console.error(`Critical error during fetch to ${endpoint}:`, error);
+        throw error;
     }
 }
 
-async function getAllTickers() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/v1/contract/ticker`);
-        if (!response.ok) return {};
-        const data = await response.json();
-        if (!data.success || !Array.isArray(data.data)) return {};
-        return data.data.reduce((map, ticker) => {
-            map[ticker.symbol] = ticker;
-            return map;
-        }, {});
-    } catch (error) {
-        console.error(`Could not fetch all tickers:`, error.message);
-        return {};
-    }
-}
-
-// --- Main API Route ---
+// نقطة النهاية الرئيسية التي تطلبها الواجهة الأمامية
+// The main endpoint that the frontend will call.
 app.get('/api/portfolio-data', async (req, res) => {
-    if (!apiKey || !secretKey) {
-        return res.status(500).json({ error: 'لم يتم إعداد مفاتيح API على الخادم بشكل صحيح.' });
-    }
-
     try {
-        const [allTickers, accountAssetsResponse, openPositionsResponse, historyDealsResponse] = await Promise.all([
-            getAllTickers(),
-            makeRequest('/api/v1/private/account/assets'),
-            makeRequest('/api/v1/private/position/open_positions'),
-            makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 })
+        // جلب جميع البيانات بشكل متزامن
+        // Fetching all data concurrently for better performance.
+        const [assetsData, positionsData, historyData, tickersData, contractDetailsData] = await Promise.all([
+            makeRequest('GET', ASSETS_ENDPOINT),
+            makeRequest('GET', POSITIONS_ENDPOINT),
+            makeRequest('GET', HISTORY_ENDPOINT, 'page_size=200'), // Fetching last 200 closed trades
+            fetch(`${BASE_URL}${TICKER_ENDPOINT}`).then(r => r.json()),
+            fetch(`${BASE_URL}${CONTRACT_DETAILS_ENDPOINT}`).then(r => r.json()),
         ]);
 
-        let totalEquity = 0;
-        let availableBalance = 0;
-        if (accountAssetsResponse.success && Array.isArray(accountAssetsResponse.data)) {
-            const usdtAsset = accountAssetsResponse.data.find(asset => asset.currency === "USDT");
-            if (usdtAsset) {
-                totalEquity = safeParseFloat(usdtAsset.equity);
-                availableBalance = safeParseFloat(usdtAsset.availableBalance);
-            }
+        if (!assetsData.success || !positionsData.success || !historyData.success || !tickersData.success || !contractDetailsData.success) {
+            throw new Error('One or more API calls were unsuccessful.');
         }
 
-        let openPositions = [];
-        if (openPositionsResponse.success && Array.isArray(openPositionsResponse.data)) {
-            for (const pos of openPositionsResponse.data) {
-                const contractDetails = await getContractDetails(pos.symbol);
-                const ticker = allTickers[pos.symbol];
+        // --- 1. حساب بيانات المحفظة الأساسية ---
+        // --- 1. Calculating core portfolio data ---
+        const usdtAsset = assetsData.data.find(a => a.currency === 'USDT');
+        const totalEquity = usdtAsset ? usdtAsset.equity : 0;
+        const totalAssetsValue = usdtAsset ? usdtAsset.positionMargin : 0;
+        const openPositionsCount = positionsData.data ? positionsData.data.length : 0;
 
-                const currentPrice = ticker ? safeParseFloat(ticker.lastPrice) : 0;
-                const openPrice = safeParseFloat(pos.holdAvgPrice);
-                const positionSize = safeParseFloat(pos.holdVol);
-                const contractSize = contractDetails ? safeParseFloat(contractDetails.contractSize) : 1;
-                const pnlDirection = pos.positionType === 1 ? 1 : -1;
+        // --- 2. معالجة المراكز المفتوحة مع الأسعار الحية ---
+        // --- 2. Processing open positions with live prices ---
+        const tickersMap = new Map(tickersData.data.map(t => [t.symbol, t.lastPrice]));
+        const contractSizeMap = new Map(contractDetailsData.data.map(c => [c.symbol, c.contractSize]));
 
-                const calculatedPNL = (currentPrice > 0) ? (currentPrice - openPrice) * positionSize * contractSize * pnlDirection : 0;
-                const margin = safeParseFloat(pos.im) || 1;
-                const pnlPercentage = (calculatedPNL / margin) * 100;
+        const openPositions = positionsData.data.map(pos => {
+            const currentPrice = tickersMap.get(pos.symbol) || 0;
+            const contractSize = contractSizeMap.get(pos.symbol) || 1;
+            const pnl = (currentPrice - pos.holdAvgPrice) * pos.holdVol * contractSize * (pos.positionType === 1 ? 1 : -1);
+            const pnlPercentage = (pnl / pos.im) * 100;
 
-                openPositions.push({
-                    symbol: pos.symbol,
-                    positionType: pos.positionType === 1 ? 'Long' : 'Short',
-                    leverage: pos.leverage,
-                    openPrice: openPrice,
-                    currentPrice: currentPrice,
-                    unrealizedPNL: calculatedPNL,
-                    pnlPercentage: pnlPercentage
-                });
-            }
-        }
+            return {
+                symbol: pos.symbol,
+                positionType: pos.positionType === 1 ? 'Long' : 'Short', // شراء أو بيع
+                leverage: pos.leverage,
+                entryPrice: pos.holdAvgPrice,
+                currentPrice: currentPrice,
+                pnl: pnl,
+                pnlPercentage: pnlPercentage,
+            };
+        });
 
-        const totalMarginInPositions = openPositions.reduce((sum, pos) => {
-            const originalPos = openPositionsResponse.data.find(p => p.symbol === pos.symbol);
-            return sum + (originalPos ? safeParseFloat(originalPos.im) : 0);
-        }, 0);
+        // --- 3. تحليل سجل الصفقات التاريخية ---
+        // --- 3. Analyzing historical trade data ---
+        const closedTrades = historyData.data
+            .filter(order => order.state === 3) // state 3 means fully filled/closed
+            .map(order => ({
+                symbol: order.symbol,
+                profit: order.profit || 0,
+                closeDate: order.updateTime ? new Date(order.updateTime).toLocaleDateString('ar-EG') : 'N/A',
+            }));
 
+        const profitableTrades = closedTrades.filter(t => t.profit > 0).sort((a, b) => b.profit - a.profit);
+        const losingTrades = closedTrades.filter(t => t.profit < 0).sort((a, b) => a.profit - b.profit);
 
-        let bestTrades = [], worstTrades = [];
-        if (historyDealsResponse.success && historyDealsResponse.data && Array.isArray(historyDealsResponse.data.resultList)) {
-            const closedTradesPromises = historyDealsResponse.data.resultList
-                .filter(order => order.state === 3 && order.dealAvgPrice && order.openAvgPrice && order.vol)
-                .map(async (order) => {
-                    const contractDetails = await getContractDetails(order.symbol);
-                    const openPrice = safeParseFloat(order.openAvgPrice);
-                    const closePrice = safeParseFloat(order.dealAvgPrice);
-                    const positionSize = safeParseFloat(order.vol);
-                    const contractSize = contractDetails ? safeParseFloat(contractDetails.contractSize) : 1;
-                    const pnlDirection = order.openType === 1 ? 1 : -1;
-                    
-                    const calculatedPnl = (closePrice - openPrice) * positionSize * contractSize * pnlDirection;
-                    
-                    return {
-                        symbol: order.symbol, 
-                        pnl: calculatedPnl, 
-                        date: order.updateTime ? new Date(order.updateTime).toLocaleDateString('en-GB') : 'N/A'
-                    };
-                });
-                
-            const closedTrades = await Promise.all(closedTradesPromises);
-
-            closedTrades.sort((a, b) => b.pnl - a.pnl);
-            bestTrades = closedTrades.slice(0, 3);
-            worstTrades = closedTrades.filter(t => t.pnl < 0).slice(-3).reverse();
-        }
-
+        // --- 4. تجميع وإرسال البيانات النهائية ---
+        // --- 4. Assembling and sending the final data package ---
         res.json({
             totalBalance: totalEquity,
-            assetsValue: totalMarginInPositions,
-            openPositionsCount: openPositions.length,
+            assetsValue: totalAssetsValue,
+            openPositionsCount: openPositionsCount,
             openPositions: openPositions,
-            bestTrades: bestTrades,
-            worstTrades: worstTrades
+            bestTrades: profitableTrades.slice(0, 3),
+            worstTrades: losingTrades.slice(0, 3),
         });
 
     } catch (error) {
-        console.error('A critical error occurred in the main route:', error);
-        res.status(500).json({ error: `خطأ حرج في الخادم: ${error.message}` });
+        console.error('Error in /api/portfolio-data:', error);
+        res.status(500).json({ error: error.message || 'An internal server error occurred.' });
     }
 });
 
-
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-async function makeRequest(endpoint, params = {}) {
-    const timestamp = Date.now();
-    const queryString = new URLSearchParams(params).toString();
-    const toSign = `${apiKey}${timestamp}${queryString}`;
-    const signature = CryptoJS.HmacSHA256(toSign, secretKey).toString(CryptoJS.enc.Hex);
-    let url = `${API_BASE_URL}${endpoint}`;
-    if (queryString) url += `?${queryString}`;
-    
-    const controller = new AbortController();
-    const timeout = setTimeout(() => { controller.abort(); }, REQUEST_TIMEOUT);
-
-    try {
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json', 'ApiKey': apiKey, 'Request-Time': timestamp, 'Signature': signature },
-            signal: controller.signal
-        });
-        const text = await response.text();
-        if (!response.ok) throw new Error(`MEXC request failed with status ${response.status}: ${text}`);
-        const jsonResponse = JSON.parse(text);
-        if (jsonResponse.code && jsonResponse.code !== 0) throw new Error(`MEXC API Error (${jsonResponse.code}): ${jsonResponse.msg}`);
-        return { success: true, data: jsonResponse.data };
-    } catch (error) {
-        if (error.name === 'AbortError') return { success: false, error: 'Request timed out' };
-        return { success: false, error: error.message };
-    } finally {
-        clearTimeout(timeout);
-    }
-}
-
-app.listen(port, () => {
-    console.log(`Server listening at port ${port}`);
+// تشغيل الخادم
+// Starting the server.
+app.listen(PORT, () => {
+    console.log(`Server listening at port ${PORT}`);
 });
 
