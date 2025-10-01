@@ -20,16 +20,23 @@ const secretKey = process.env.MEXC_SECRET_KEY;
 app.use(cors());
 app.use(express.static(__dirname));
 
-// --- New helper function to get LIVE ticker data ---
-async function getTicker(symbol) {
+// --- New helper function to get ALL tickers at once ---
+async function getAllTickers() {
     try {
-        const response = await fetch(`${API_BASE_URL}/api/v1/contract/ticker/${symbol}`);
-        if (!response.ok) return null;
+        const response = await fetch(`${API_BASE_URL}/api/v1/contract/ticker`);
+        if (!response.ok) return {};
         const data = await response.json();
-        return data.success ? data.data : null;
+        if (!data.success || !Array.isArray(data.data)) return {};
+
+        // Convert array to a map for fast lookups (e.g., tickers['BTC_USDT'])
+        const tickersMap = {};
+        for (const ticker of data.data) {
+            tickersMap[ticker.symbol] = ticker;
+        }
+        return tickersMap;
     } catch (error) {
-        console.error(`Could not fetch ticker for ${symbol}:`, error.message);
-        return null;
+        console.error(`Could not fetch all tickers:`, error.message);
+        return {};
     }
 }
 
@@ -40,49 +47,61 @@ app.get('/api/portfolio-data', async (req, res) => {
     }
 
     try {
-        // Step 1: Get primary data (assets and positions)
-        const [accountAssetsResponse, openPositionsResponse, historyDealsResponse] = await Promise.all([
+        // Step 1: Fetch all necessary data in parallel
+        const [allTickers, accountAssetsResponse, openPositionsResponse, historyDealsResponse] = await Promise.all([
+            getAllTickers(),
             makeRequest('/api/v1/private/account/assets'),
             makeRequest('/api/v1/private/position/open_positions'),
             makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 })
         ]);
 
+        // Step 2: Process Account Assets
         let availableBalance = 0;
         if (accountAssetsResponse.success && Array.isArray(accountAssetsResponse.data)) {
-            availableBalance = accountAssetsResponse.data.reduce((sum, asset) => sum + parseFloat(asset.availableBalance || 0), 0);
+            const usdtAsset = accountAssetsResponse.data.find(asset => asset.currency === "USDT");
+            if (usdtAsset) {
+                availableBalance = parseFloat(usdtAsset.availableBalance || 0);
+            }
         }
 
-        let openPositions = [], totalMarginInPositions = 0;
+        // Step 3: Process Open Positions and calculate PNL
+        let openPositions = [];
+        let totalMarginInPositions = 0;
+        let totalUnrealizedPNL = 0;
 
         if (openPositionsResponse.success && Array.isArray(openPositionsResponse.data) && openPositionsResponse.data.length > 0) {
             totalMarginInPositions = openPositionsResponse.data.reduce((sum, pos) => sum + parseFloat(pos.im || 0), 0);
 
-            // Step 2: Get live ticker data for each open position
             for (const pos of openPositionsResponse.data) {
-                const ticker = await getTicker(pos.symbol);
+                const ticker = allTickers[pos.symbol];
                 const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
                 
-                // Manually calculate PNL based on live price
                 const positionSize = parseFloat(pos.holdVol);
                 const openPrice = parseFloat(pos.holdAvgPrice);
                 const pnlDirection = pos.positionType === 1 ? 1 : -1; // 1 for Long, -1 for Short
-                const calculatedPNL = (currentPrice - openPrice) * positionSize * pnlDirection;
-                const pnlPercentage = (calculatedPNL / (parseFloat(pos.im) || 1)) * 100;
+                
+                const calculatedPNL = (currentPrice > 0) ? (currentPrice - openPrice) * positionSize * pnlDirection : 0;
+                totalUnrealizedPNL += calculatedPNL;
+                
+                const margin = parseFloat(pos.im) || 1; // Avoid division by zero
+                const pnlPercentage = (calculatedPNL / margin) * 100;
                 
                 openPositions.push({
                     symbol: pos.symbol,
                     positionType: pos.positionType === 1 ? 'Long' : 'Short',
                     leverage: pos.leverage,
                     openPrice: openPrice,
-                    currentPrice: currentPrice, // Use live price
-                    unrealizedPNL: calculatedPNL, // Use calculated PNL
+                    currentPrice: currentPrice,
+                    unrealizedPNL: calculatedPNL,
                     pnlPercentage: pnlPercentage
                 });
             }
         }
         
-        const totalBalance = availableBalance + totalMarginInPositions;
+        // Step 4: Calculate accurate Total Balance (Equity)
+        const totalBalance = availableBalance + totalMarginInPositions + totalUnrealizedPNL;
         
+        // Step 5: Process Trade History
         let bestTrades = [], worstTrades = [];
         if (historyDealsResponse.success && historyDealsResponse.data && Array.isArray(historyDealsResponse.data.resultList)) {
             const closedTrades = historyDealsResponse.data.resultList
@@ -95,10 +114,11 @@ app.get('/api/portfolio-data', async (req, res) => {
             worstTrades = closedTrades.filter(t => t.pnl < 0).slice(-3).reverse();
         }
 
+        // Step 6: Send final, accurate data
         res.json({
             totalBalance: totalBalance,
-            assetsValue: totalMarginInPositions,
-            openPositionsCount: openPositions.length, // Changed from assetsCount
+            assetsValue: totalMarginInPositions, // This is the total margin used
+            openPositionsCount: openPositions.length,
             openPositions: openPositions,
             bestTrades: bestTrades,
             worstTrades: worstTrades
@@ -117,12 +137,14 @@ app.get('*', (req, res) => {
 
 // --- API Request Helper with Timeout ---
 async function makeRequest(endpoint, params = {}) {
-    // ... (The rest of this function remains exactly the same as the previous version)
     const timestamp = Date.now();
     const queryString = new URLSearchParams(params).toString();
     const toSign = `${apiKey}${timestamp}${queryString}`;
     const signature = CryptoJS.HmacSHA256(toSign, secretKey).toString(CryptoJS.enc.Hex);
-    const url = `${API_BASE_URL}${endpoint}?${queryString}`;
+    let url = `${API_BASE_URL}${endpoint}`;
+    if (queryString) {
+        url += `?${queryString}`;
+    }
     
     const controller = new AbortController();
     const timeout = setTimeout(() => {
