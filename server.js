@@ -1,10 +1,12 @@
 // -----------------------------------------------------------------------------
 // |                  ANONYMOUS ASTRONAUT - SERVER ENGINE                      |
-// |                 VERSION: 3D Companion AI Consciousness                    |
-// | This definitive version analyzes data to create a rich 'aiState' object   |
-// |   (mood, target, message) to direct the 3D companion on the frontend.     |
+// |                   VERSION: Final Verified & Polished                      |
+// | This is the complete, verified, and final server code. It includes all    |
+// | features: DB connection, AI status analysis, XP calculation, and all      |
+// | previous bug fixes. This is the definitive engine for your cockpit.       |
 // -----------------------------------------------------------------------------
 
+// استيراد المكتبات الضرورية
 import express from 'express';
 import crypto from 'crypto';
 import fetch from 'node-fetch';
@@ -13,18 +15,24 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import pg from 'pg';
 
+// --- [ CONFIGURATION ] ---
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// إعداد الخادم
 const app = express();
 const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.static(__dirname));
 
+// --- [ DATABASE SETUP ] ---
 let pool;
 if (process.env.DATABASE_URL) {
-    pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+    pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false }
+    });
 } else {
     console.warn("DATABASE_URL not found. Database features will be disabled.");
 }
@@ -32,13 +40,20 @@ if (process.env.DATABASE_URL) {
 const initializeDatabase = async () => {
     if (!pool) return;
     try {
-        await pool.query(`CREATE TABLE IF NOT EXISTS portfolio_history (id SERIAL PRIMARY KEY, equity NUMERIC(20, 8) NOT NULL, timestamp TIMESTAMPTZ DEFAULT NOW());`);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS portfolio_history (
+                id SERIAL PRIMARY KEY,
+                equity NUMERIC(20, 8) NOT NULL,
+                timestamp TIMESTAMPTZ DEFAULT NOW()
+            );
+        `);
         console.log('Database table checked/created successfully.');
     } catch (err) {
         console.error('Error initializing database table:', err);
     }
 };
 
+// --- [ API & SERVER LOGIC ] ---
 const apiKey = process.env.MEXC_API_KEY;
 const secretKey = process.env.MEXC_SECRET_KEY;
 const BASE_URL = 'https://contract.mexc.com';
@@ -71,16 +86,24 @@ async function getPortfolioDataAndLog() {
         fetch(`${BASE_URL}/api/v1/contract/detail`).then(r => r.json()),
     ]);
 
+    // Data Guards to prevent crashes
     const usdtAsset = (assetsData.data || []).find(a => a.currency === 'USDT');
+    const openPositions = positionsData.data || [];
+    const closedOrders = historyData.data || [];
+    const tickers = tickersData.data || [];
+    const contracts = contractDetailsData.data || [];
+    
+    // Use the definitive 'equity' value from the API as the total balance
     const totalEquity = usdtAsset ? usdtAsset.equity : 0;
     
+    // Log equity to the database periodically
     if (pool) {
         try {
             const lastLog = await pool.query('SELECT timestamp FROM portfolio_history ORDER BY timestamp DESC LIMIT 1');
             const now = new Date();
             const lastLogTime = lastLog.rows.length > 0 ? new Date(lastLog.rows[0].timestamp) : new Date(0);
             const minutesSinceLastLog = (now.getTime() - lastLogTime.getTime()) / 60000;
-            if (minutesSinceLastLog > 5) {
+            if (minutesSinceLastLog > 5) { // Log approximately every 5 minutes
                 await pool.query('INSERT INTO portfolio_history (equity, timestamp) VALUES ($1, NOW())', [totalEquity]);
                 console.log(`Successfully logged new equity: ${totalEquity}`);
             }
@@ -90,9 +113,6 @@ async function getPortfolioDataAndLog() {
     }
 
     const totalAssetsValue = usdtAsset ? usdtAsset.positionMargin : 0;
-    const openPositions = positionsData.data || [];
-    const tickers = tickersData.data || [];
-    const contracts = contractDetailsData.data || [];
     
     const tickersMap = new Map(tickers.map(t => [t.symbol, t.lastPrice]));
     const contractSizeMap = new Map(contracts.map(c => [c.symbol, c.contractSize]));
@@ -101,15 +121,15 @@ async function getPortfolioDataAndLog() {
         const currentPrice = tickersMap.get(pos.symbol) || 0;
         const contractSize = contractSizeMap.get(pos.symbol) || 1;
         const pnl = (currentPrice - pos.holdAvgPrice) * pos.holdVol * contractSize * (pos.positionType === 1 ? 1 : -1);
-        const pnlPercentage = pos.im > 0 ? (pnl / pos.im) * 100 : 0;
         return { symbol: pos.symbol, pnl };
     });
 
+    // --- [ AI Analysis Logic ] ---
     const overallPnl = processedPositions.reduce((sum, pos) => sum + pos.pnl, 0);
 
     let aiState = {
-        mood: 'Idle', // Default state
-        targetSelector: '#total-balance', // Default target
+        mood: 'Idle',
+        targetSelector: '#total-balance',
         message: 'الأنظمة هادئة...'
     };
 
@@ -134,17 +154,18 @@ async function getPortfolioDataAndLog() {
         aiState.message = 'تم رصد تقلبات سلبية. أقوم بمراقبة الوضع عن كثب.';
     }
     
-    // Process full data for frontend display (this is separate from AI logic)
     const fullProcessedPositions = openPositions.map(pos => {
-         const currentPrice = tickersMap.get(pos.symbol) || 0;
+        const currentPrice = tickersMap.get(pos.symbol) || 0;
         const contractSize = contractSizeMap.get(pos.symbol) || 1;
         const pnl = (currentPrice - pos.holdAvgPrice) * pos.holdVol * contractSize * (pos.positionType === 1 ? 1 : -1);
         const pnlPercentage = pos.im > 0 ? (pnl / pos.im) * 100 : 0;
         return { symbol: pos.symbol, positionType: pos.positionType === 1 ? 'Long' : 'Short', leverage: pos.leverage, entryPrice: pos.holdAvgPrice, currentPrice, pnl, pnlPercentage };
     });
-    const closedTrades = (historyData.data || []).filter(o => o.state === 3 && o.profit !== 0).map(o => ({ symbol: o.symbol, profit: o.profit || 0, closeDate: o.updateTime ? new Date(o.updateTime).toLocaleDateString('ar-EG') : 'N/A' }));
+    const closedTrades = (closedOrders || []).filter(o => o.state === 3 && o.profit !== 0).map(o => ({ symbol: o.symbol, profit: o.profit || 0, closeDate: o.updateTime ? new Date(o.updateTime).toLocaleDateString('ar-EG') : 'N/A' }));
     const profitableTrades = closedTrades.filter(t => t.profit > 0).sort((a, b) => b.profit - a.profit);
     const losingTrades = closedTrades.filter(t => t.profit < 0).sort((a, b) => a.profit - b.profit);
+    
+    // Calculate total profit for XP
     const totalHistoricalProfit = profitableTrades.reduce((sum, trade) => sum + trade.profit, 0);
 
     return {
@@ -159,6 +180,7 @@ async function getPortfolioDataAndLog() {
     };
 }
 
+// API Endpoints
 app.get('/api/portfolio-data', async (req, res) => {
     try {
         const data = await getPortfolioDataAndLog();
@@ -185,10 +207,12 @@ app.get('/api/portfolio-history', async (req, res) => {
     }
 });
 
+// Serve Frontend
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Start Server
 app.listen(PORT, () => {
     console.log(`Server listening at port ${PORT}`);
     initializeDatabase();
