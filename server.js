@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------------
 // |                            MEXC PORTFOLIO SERVER                          |
-// |                      VERSION: Definitive (Correct History)                |
-// |     This version fixes the issue of historical trades not appearing      |
-// |      by using the correct API endpoint for futures trade history.        |
+// |                 VERSION: Final (with Static Path Fix)                     |
+// |      This version fixes the "Cannot GET /" error by correctly setting     |
+// |          the static path for ES modules and serving index.html.          |
 // -----------------------------------------------------------------------------
 
 // استيراد المكتبات الضرورية
@@ -11,13 +11,27 @@ import express from 'express';
 import crypto from 'crypto';
 import fetch from 'node-fetch';
 import cors from 'cors';
+import path from 'path'; // <-- Module added to handle file paths
+import { fileURLToPath } from 'url'; // <-- Module added to handle file paths
+
+// --- [ NEW ] ---
+// Define __dirname for ES modules, this is the "new map" for our server.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+// --- [ END NEW ] ---
 
 // إعداد الخادم
 // Setting up the Express server.
 const app = express();
 const PORT = process.env.PORT || 10000;
 app.use(cors());
-app.use(express.static('public')); // This line is for serving the frontend if in the same project.
+
+// --- [ MODIFIED ] ---
+// Tell Express to serve static files (like index.html) from the 'public' directory.
+// We now use the full path to avoid any confusion.
+app.use(express.static(path.join(__dirname, 'public')));
+// --- [ END MODIFIED ] ---
+
 
 // استرداد مفاتيح API بأمان من متغيرات البيئة
 // Securely getting API keys from environment variables.
@@ -29,7 +43,7 @@ const secretKey = process.env.MEXC_SECRET_KEY;
 const BASE_URL = 'https://contract.mexc.com';
 const ASSETS_ENDPOINT = '/api/v1/private/account/assets';
 const POSITIONS_ENDPOINT = '/api/v1/private/position/open_positions';
-const HISTORY_ENDPOINT = '/api/v1/private/order/list/history_orders'; // <-- The CORRECT endpoint for futures history
+const HISTORY_ENDPOINT = '/api/v1/private/order/list/history_orders';
 const TICKER_ENDPOINT = '/api/v1/contract/ticker';
 const CONTRACT_DETAILS_ENDPOINT = '/api/v1/contract/detail';
 
@@ -55,7 +69,7 @@ async function makeRequest(method, endpoint, params = '') {
     };
 
     try {
-        const response = await fetch(url, { method, headers, timeout: 30000 }); // Increased timeout to 30s
+        const response = await fetch(url, { method, headers, timeout: 30000 });
         if (!response.ok) {
             const errorBody = await response.json();
             console.error(`API Error on ${endpoint}:`, errorBody);
@@ -71,13 +85,13 @@ async function makeRequest(method, endpoint, params = '') {
 // نقطة النهاية الرئيسية التي تطلبها الواجهة الأمامية
 // The main endpoint that the frontend will call.
 app.get('/api/portfolio-data', async (req, res) => {
+    // ... The rest of this function remains exactly the same ...
+    // ... بقية هذه الدالة تبقى كما هي تماماً ...
     try {
-        // جلب جميع البيانات بشكل متزامن
-        // Fetching all data concurrently for better performance.
         const [assetsData, positionsData, historyData, tickersData, contractDetailsData] = await Promise.all([
             makeRequest('GET', ASSETS_ENDPOINT),
             makeRequest('GET', POSITIONS_ENDPOINT),
-            makeRequest('GET', HISTORY_ENDPOINT, 'page_size=200'), // Fetching last 200 closed trades
+            makeRequest('GET', HISTORY_ENDPOINT, 'page_size=200'),
             fetch(`${BASE_URL}${TICKER_ENDPOINT}`).then(r => r.json()),
             fetch(`${BASE_URL}${CONTRACT_DETAILS_ENDPOINT}`).then(r => r.json()),
         ]);
@@ -86,15 +100,11 @@ app.get('/api/portfolio-data', async (req, res) => {
             throw new Error('One or more API calls were unsuccessful.');
         }
 
-        // --- 1. حساب بيانات المحفظة الأساسية ---
-        // --- 1. Calculating core portfolio data ---
         const usdtAsset = assetsData.data.find(a => a.currency === 'USDT');
         const totalEquity = usdtAsset ? usdtAsset.equity : 0;
         const totalAssetsValue = usdtAsset ? usdtAsset.positionMargin : 0;
         const openPositionsCount = positionsData.data ? positionsData.data.length : 0;
 
-        // --- 2. معالجة المراكز المفتوحة مع الأسعار الحية ---
-        // --- 2. Processing open positions with live prices ---
         const tickersMap = new Map(tickersData.data.map(t => [t.symbol, t.lastPrice]));
         const contractSizeMap = new Map(contractDetailsData.data.map(c => [c.symbol, c.contractSize]));
 
@@ -106,7 +116,7 @@ app.get('/api/portfolio-data', async (req, res) => {
 
             return {
                 symbol: pos.symbol,
-                positionType: pos.positionType === 1 ? 'Long' : 'Short', // شراء أو بيع
+                positionType: pos.positionType === 1 ? 'Long' : 'Short',
                 leverage: pos.leverage,
                 entryPrice: pos.holdAvgPrice,
                 currentPrice: currentPrice,
@@ -115,10 +125,8 @@ app.get('/api/portfolio-data', async (req, res) => {
             };
         });
 
-        // --- 3. تحليل سجل الصفقات التاريخية ---
-        // --- 3. Analyzing historical trade data ---
         const closedTrades = historyData.data
-            .filter(order => order.state === 3) // state 3 means fully filled/closed
+            .filter(order => order.state === 3)
             .map(order => ({
                 symbol: order.symbol,
                 profit: order.profit || 0,
@@ -128,8 +136,6 @@ app.get('/api/portfolio-data', async (req, res) => {
         const profitableTrades = closedTrades.filter(t => t.profit > 0).sort((a, b) => b.profit - a.profit);
         const losingTrades = closedTrades.filter(t => t.profit < 0).sort((a, b) => a.profit - b.profit);
 
-        // --- 4. تجميع وإرسال البيانات النهائية ---
-        // --- 4. Assembling and sending the final data package ---
         res.json({
             totalBalance: totalEquity,
             assetsValue: totalAssetsValue,
@@ -144,6 +150,14 @@ app.get('/api/portfolio-data', async (req, res) => {
         res.status(500).json({ error: error.message || 'An internal server error occurred.' });
     }
 });
+
+// --- [ NEW ] ---
+// A "catch-all" route to serve the index.html file for any other request.
+// This ensures that your frontend loads correctly.
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+// --- [ END NEW ] ---
 
 // تشغيل الخادم
 // Starting the server.
