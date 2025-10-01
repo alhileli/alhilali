@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title> عرض أداء المحفظة </title>
+    <title>لوحة عرض أداء المحفظة (MEXC)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,7 +15,8 @@
         .negative { color: #dc3545; }
         .loader { border: 4px solid #30363d; border-top: 4px solid #388bfd; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        tr.border-b-thin { border-bottom: 1px solid #30363d; }
+        .skeleton { animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; background-color: #30363d; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -24,7 +25,7 @@
         
         <header class="text-center space-y-2">
             <h1 class="text-3xl md:text-4xl font-bold text-white">لوحة عرض أداء المحفظة (MEXC)</h1>
-            <p class="text-gray-400">تحليل شامل ومباشر لأداء المحفظة والصفقات.</p>
+            <p class="text-gray-400">تحليل شامل ومباشر ومحدّث تلقائياً لأداء المحفظة والصفقات.</p>
         </header>
 
         <div id="loading-state" class="text-center py-10">
@@ -37,41 +38,38 @@
         </div>
 
         <div id="dashboard-section" class="hidden space-y-8">
-            <!-- KPIs Section -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
+            <!-- KPIs -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
                 <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">إجمالي قيمة المحفظة (USDT)</h3><p id="total-balance" class="text-3xl font-bold text-white mt-2">--.--</p></div>
                 <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">قيمة الأصول (USDT)</h3><p id="assets-value" class="text-3xl font-bold text-white mt-2">--.--</p></div>
-                <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">عدد الأصول المختلفة</h3><p id="assets-count" class="text-3xl font-bold mt-2">--</p></div>
+                <!-- *** THIS IS THE CHANGED LINE *** -->
+                <div class="card p-6 flex flex-col justify-center items-center"><h3 class="text-gray-400 text-lg">عدد المراكز المفتوحة</h3><p id="open-positions-count" class="text-3xl font-bold mt-2">--</p></div>
             </div>
 
-            <!-- Open Positions Section -->
+            <!-- Open Positions -->
             <div>
                 <h2 class="text-2xl font-bold text-white mb-4">المراكز المفتوحة حالياً</h2>
                 <div class="card overflow-x-auto">
-                    <table class="w-full text-right"><thead class="bg-gray-800 text-gray-300"><tr><th class="p-4">الرمز</th><th class="p-4">النوع</th><th class="p-4">الرافعة</th><th class="p-4">سعر الدخول</th><th class="p-4">السعر الحالي</th><th class="p-4">الربح/الخسارة (USDT)</th><th class="p-4">الربح/الخسارة (%)</th></tr></thead><tbody id="open-positions-body"></tbody></table>
+                    <table class="w-full text-right"><thead class="bg-gray-800 text-gray-300"><tr><th class="p-4">الرمز</th><th class="p-4">النوع</th><th class="p-4">الرافعة</th><th class="p-4">سعر الدخول</th><th class="p-4">السعر الحالي</th><th class="p-4">الربح/الخسارة (USDT)</th><th class="p-4">الربح/الخسارة (%)</th></tr></thead><tbody id="positions-body"></tbody></table>
                 </div>
             </div>
-
-            <!-- Trade History Analysis Section -->
-            <div>
-                <h2 class="text-2xl font-bold text-white mb-4">أبرز الصفقات التاريخية</h2>
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- Best Trades -->
-                    <div class="card p-6">
-                        <h3 class="text-xl font-bold text-green-400 mb-4">أفضل 3 صفقات رابحة</h3>
-                        <table class="w-full text-right"><thead class="text-gray-300"><tr><th class="pb-2">الرمز</th><th class="pb-2">تاريخ الإغلاق</th><th class="pb-2">الربح (USDT)</th></tr></thead><tbody id="best-trades-body"></tbody></table>
-                    </div>
-                    <!-- Worst Trades -->
-                    <div class="card p-6">
-                        <h3 class="text-xl font-bold text-red-400 mb-4">أسوأ 3 صفقات خاسرة</h3>
-                        <table class="w-full text-right"><thead class="text-gray-300"><tr><th class="pb-2">الرمز</th><th class="pb-2">تاريخ الإغلاق</th><th class="pb-2">الخسارة (USDT)</th></tr></thead><tbody id="worst-trades-body"></tbody></table>
-                    </div>
+            
+            <!-- Historical Trades -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-white mb-4">أفضل 3 صفقات رابحة</h2>
+                    <div id="best-trades-card" class="card p-4 space-y-3"></div>
+                </div>
+                <div>
+                    <h2 class="text-2xl font-bold text-white mb-4">أسوأ 3 صفقات خاسرة</h2>
+                    <div id="worst-trades-card" class="card p-4 space-y-3"></div>
                 </div>
             </div>
         </div>
+
          <footer class="text-center text-gray-500 text-sm pt-4">
             يتم تحديث البيانات كل 60 ثانية.
-        </footer>
+         </footer>
     </div>
 
     <script>
@@ -82,101 +80,91 @@
             dashboardSection: document.getElementById('dashboard-section'),
             totalBalanceElem: document.getElementById('total-balance'),
             assetsValueElem: document.getElementById('assets-value'),
-            assetsCountElem: document.getElementById('assets-count'),
-            openPositionsBody: document.getElementById('open-positions-body'),
-            bestTradesBody: document.getElementById('best-trades-body'),
-            worstTradesBody: document.getElementById('worst-trades-body'),
+            openPositionsCountElem: document.getElementById('open-positions-count'), // Updated ID
+            positionsBody: document.getElementById('positions-body'),
+            bestTradesCard: document.getElementById('best-trades-card'),
+            worstTradesCard: document.getElementById('worst-trades-card'),
         };
+
+        function formatNumber(num) {
+            return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function formatPrice(num) {
+            return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 });
+        }
+        
+        function createTradeRow(trade, isPositive) {
+            const color = isPositive ? 'text-green-400' : 'text-red-400';
+            return `
+                <div class="flex justify-between items-center p-2 rounded-md bg-gray-800">
+                    <div class="font-mono">${trade.symbol}</div>
+                    <div class="text-xs text-gray-400">${trade.date}</div>
+                    <div class="font-bold ${color}">${formatNumber(trade.pnl)} USDT</div>
+                </div>
+            `;
+        }
+
+        function updateDashboard(data) {
+            UI.totalBalanceElem.textContent = formatNumber(data.totalBalance);
+            UI.assetsValueElem.textContent = formatNumber(data.assetsValue);
+            UI.openPositionsCountElem.textContent = data.openPositionsCount; // Updated data point
+
+            // Render Open Positions
+            UI.positionsBody.innerHTML = '';
+            if (data.openPositions && data.openPositions.length > 0) {
+                 data.openPositions.forEach(pos => {
+                    const pnlClass = pos.unrealizedPNL >= 0 ? 'positive' : 'negative';
+                    const row = document.createElement('tr');
+                    row.className = 'border-b border-gray-700 hover:bg-gray-800';
+                    row.innerHTML = `
+                        <td class="p-4 font-medium text-white">${pos.symbol}</td>
+                        <td class="p-4 ${pos.positionType === 'Long' ? 'text-green-400' : 'text-red-400'}">${pos.positionType === 'Long' ? 'شراء' : 'بيع'}</td>
+                        <td class="p-4">${pos.leverage}x</td>
+                        <td class="p-4">${formatPrice(pos.openPrice)}</td>
+                        <td class="p-4">${formatPrice(pos.currentPrice)}</td>
+                        <td class="p-4 font-bold ${pnlClass}">${formatNumber(pos.unrealizedPNL)}</td>
+                        <td class="p-4 font-bold ${pnlClass}">${formatNumber(pos.pnlPercentage)}%</td>
+                    `;
+                    UI.positionsBody.appendChild(row);
+                });
+            } else {
+                UI.positionsBody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-gray-400">لا توجد مراكز مفتوحة حالياً.</td></tr>`;
+            }
+
+            // Render Best Trades
+            UI.bestTradesCard.innerHTML = '';
+            if (data.bestTrades && data.bestTrades.length > 0) {
+                data.bestTrades.forEach(trade => UI.bestTradesCard.innerHTML += createTradeRow(trade, true));
+            } else {
+                UI.bestTradesCard.innerHTML = `<p class="text-center text-gray-400 p-4">لا توجد بيانات كافية.</p>`;
+            }
+
+            // Render Worst Trades
+            UI.worstTradesCard.innerHTML = '';
+            if (data.worstTrades && data.worstTrades.length > 0) {
+                data.worstTrades.forEach(trade => UI.worstTradesCard.innerHTML += createTradeRow(trade, false));
+            } else {
+                 UI.worstTradesCard.innerHTML = `<p class="text-center text-gray-400 p-4">لا توجد بيانات كافية.</p>`;
+            }
+        }
 
         async function fetchData() {
             try {
                 const response = await fetch('/api/portfolio-data'); 
-                
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(errorData.error || `خطأ من الخادم: ${response.status}`);
                 }
-                
                 const data = await response.json();
                 updateDashboard(data);
-
                 UI.loadingState.classList.add('hidden');
                 UI.errorState.classList.add('hidden');
                 UI.dashboardSection.classList.remove('hidden');
-
             } catch (error) {
-                console.error('Error:', error);
+                console.error('Error fetching data:', error);
                 UI.loadingState.classList.add('hidden');
-                UI.errorMessage.textContent = `فشل في عرض البيانات. السبب: ${error.message}`;
+                UI.errorMessage.textContent = `فشل في عرض البيانات. السبب: ${error.message}.`;
                 UI.errorState.classList.remove('hidden');
-            }
-        }
-
-        function formatPnl(value, elementClass) {
-            const isPositive = value >= 0;
-            const sign = isPositive ? '+' : '';
-            elementClass.className = isPositive ? 'positive' : 'negative';
-            return `${sign}${value.toFixed(2)}`;
-        }
-
-        function updateDashboard(data) {
-            UI.totalBalanceElem.textContent = data.totalBalance.toFixed(2);
-            UI.assetsValueElem.textContent = data.assetsValue.toFixed(2);
-            UI.assetsCountElem.textContent = data.assetsCount;
-            
-            // Populate Open Positions
-            UI.openPositionsBody.innerHTML = '';
-            if (data.openPositions && data.openPositions.length > 0) {
-                data.openPositions.forEach(pos => {
-                    const row = document.createElement('tr');
-                    row.className = 'border-b-thin';
-                    const pnlClass = pos.unrealizedPNL >= 0 ? 'positive' : 'negative';
-                    const posTypeClass = pos.positionType === 'Long' ? 'text-green-400' : 'text-red-400';
-                    row.innerHTML = `
-                        <td class="p-4 font-medium text-white">${pos.symbol}</td>
-                        <td class="p-4 font-bold ${posTypeClass}">${pos.positionType}</td>
-                        <td class="p-4">${pos.leverage}x</td>
-                        <td class="p-4">${pos.openPrice}</td>
-                        <td class="p-4">${pos.currentPrice}</td>
-                        <td class="p-4 font-bold ${pnlClass}">${formatPnl(pos.unrealizedPNL, {})}</td>
-                        <td class="p-4 font-bold ${pnlClass}">${formatPnl(pos.pnlPercentage, {})} %</td>
-                    `;
-                    UI.openPositionsBody.appendChild(row);
-                });
-            } else {
-                UI.openPositionsBody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500">لا توجد مراكز مفتوحة حالياً.</td></tr>';
-            }
-
-            // Populate Best Trades
-            UI.bestTradesBody.innerHTML = '';
-            if (data.bestTrades && data.bestTrades.length > 0) {
-                data.bestTrades.forEach(trade => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td class="py-2 font-medium">${trade.symbol}</td>
-                        <td class="py-2 text-gray-400">${trade.date}</td>
-                        <td class="py-2 font-bold positive">+${trade.pnl.toFixed(2)}</td>
-                    `;
-                    UI.bestTradesBody.appendChild(row);
-                });
-            } else {
-                 UI.bestTradesBody.innerHTML = '<tr><td colspan="3" class="py-2 text-center text-gray-500">لا توجد بيانات كافية.</td></tr>';
-            }
-            
-            // Populate Worst Trades
-            UI.worstTradesBody.innerHTML = '';
-             if (data.worstTrades && data.worstTrades.length > 0) {
-                data.worstTrades.forEach(trade => {
-                    const row = document.createElement('tr');
-                     row.innerHTML = `
-                        <td class="py-2 font-medium">${trade.symbol}</td>
-                        <td class="py-2 text-gray-400">${trade.date}</td>
-                        <td class="py-2 font-bold negative">${trade.pnl.toFixed(2)}</td>
-                    `;
-                    UI.worstTradesBody.appendChild(row);
-                });
-            } else {
-                UI.worstTradesBody.innerHTML = '<tr><td colspan="3" class="py-2 text-center text-gray-500">لا توجد بيانات كافية.</td></tr>';
             }
         }
 
