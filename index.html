@@ -1,8 +1,10 @@
 <!DOCTYPE html>
+<!-- The lang and dir attributes will be set by JavaScript -->
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- The title will be set by JavaScript -->
     <title>قمرة قيادة: فضائي مجهول</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -24,8 +26,9 @@
             to { background-position: -10000px 5000px; }
         }
         @keyframes flicker { 0%, 100% { opacity: 1; text-shadow: 0 0 8px var(--hud-border); } 50% { opacity: 0.8; text-shadow: 0 0 4px var(--hud-border); } }
+        html[dir="ltr"] body { font-family: 'Orbitron', sans-serif; }
+        html[dir="rtl"] body { font-family: 'Tajawal', sans-serif; }
         body {
-            font-family: 'Tajawal', sans-serif;
             background-color: var(--bg-color);
             color: var(--text-primary);
             background-image: url('https://www.transparenttextures.com/patterns/stardust.png');
@@ -46,6 +49,7 @@
             box-shadow: 0 0 30px rgba(0, 246, 255, 0.3), inset 0 0 20px rgba(0, 246, 255, 0.2);
             backdrop-filter: blur(10px);
             clip-path: polygon(0 20px, 20px 0, calc(100% - 20px) 0, 100% 20px, 100% calc(100% - 20px), calc(100% - 20px) 100%, 20px 100%, 0 calc(100% - 20px));
+            position: relative;
         }
         .hud-title {
             font-family: 'Orbitron', sans-serif;
@@ -58,17 +62,40 @@
         .data-item span:first-child { color: var(--text-secondary); }
         @keyframes alien-float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
         #alien-img { animation: alien-float 4s ease-in-out infinite; filter: drop-shadow(0 0 15px var(--hud-border)); }
+        #lang-toggle {
+            position: absolute;
+            top: 15px;
+            left: 15px; /* Adjusted for LTR */
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            color: var(--text-secondary);
+            transition: color 0.3s, transform 0.3s;
+        }
+        #lang-toggle:hover {
+            color: var(--hud-border);
+            transform: scale(1.1);
+        }
+        html[dir="rtl"] #lang-toggle {
+            left: auto;
+            right: 15px;
+        }
     </style>
 </head>
 <body>
 
     <div id="hud-container">
+        <!-- Language Toggle Button -->
+        <svg id="lang-toggle" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" />
+        </svg>
+        
         <div id="loading-state" class="text-center py-10">
-            <p class="hud-title text-lg flicker">...جاري الاتصال بالقاعدة الفضائية</p>
+            <p class="hud-title text-lg flicker" data-lang="loading">...جاري الاتصال بالقاعدة الفضائية</p>
         </div>
         
         <div id="error-state" class="text-center py-10 hidden">
-             <p id="error-message" class="text-red-500 hud-title">...فشل الاتصال</p>
+             <p id="error-message" class="text-red-500 hud-title"></p>
         </div>
 
         <div id="dashboard-section" class="hidden space-y-6">
@@ -80,25 +107,25 @@
                 </div>
                 <!-- Middle: Main Info -->
                 <div class="text-center space-y-4">
-                    <h1 class="hud-title text-2xl">UNKNOWN ALIEN</h1>
-                    <p class="text-sm -mt-2 text-gray-400">PORTFOLIO INTERFACE</p>
+                    <h1 class="hud-title text-2xl" data-lang="mainTitle">UNKNOWN ALIEN</h1>
+                    <p class="text-sm -mt-2 text-gray-400" data-lang="mainSubtitle">PORTFOLIO INTERFACE</p>
                     <div class="pt-2">
-                        <p class="text-xs text-gray-400 hud-title">JOURNEY PROGRESS</p>
+                        <p class="text-xs text-gray-400 hud-title" data-lang="journeyProgress">JOURNEY PROGRESS</p>
                          <div id="rank-name" class="text-lg text-white font-bold">--</div>
                     </div>
                 </div>
                 <!-- Right: Trading Log -->
                 <div class="space-y-4">
                     <div>
-                        <p class="hud-title text-sm mb-2">TRADING LOG</p>
+                        <p class="hud-title text-sm mb-2" data-lang="tradingLog">TRADING LOG</p>
                          <div id="best-trades-body" class="space-y-2"></div>
                          <div id="worst-trades-body" class="space-y-2"></div>
                     </div>
                      <div>
-                        <p class="hud-title text-sm mb-2">CURRENT INFO</p>
+                        <p class="hud-title text-sm mb-2" data-lang="currentInfo">CURRENT INFO</p>
                         <div class="space-y-2 text-sm">
-                           <div class="data-item"><span>Total Equity</span><span id="total-balance">--.--</span></div>
-                           <div class="data-item"><span>Active Missions</span><span id="open-positions-count">--</span></div>
+                           <div class="data-item"><span data-lang="totalEquity">Total Equity</span><span id="total-balance">--.--</span></div>
+                           <div class="data-item"><span data-lang="activeMissions">Active Missions</span><span id="open-positions-count">--</span></div>
                         </div>
                     </div>
                 </div>
@@ -106,7 +133,7 @@
 
             <!-- Open Missions Table -->
             <div class="hud-section pt-4">
-                 <h2 class="hud-title text-center mb-4">ACTIVE MISSIONS</h2>
+                 <h2 class="hud-title text-center mb-4" data-lang="activeMissionsTitle">ACTIVE MISSIONS</h2>
                  <div class="overflow-x-auto">
                      <table id="positions-table" class="w-full text-xs text-center"></table>
                  </div>
@@ -120,15 +147,121 @@
     </div>
 
     <script>
-        const UI = {
-            loadingState: document.getElementById('loading-state'), errorState: document.getElementById('error-state'), errorMessage: document.getElementById('error-message'), dashboardSection: document.getElementById('dashboard-section'), totalBalance: document.getElementById('total-balance'), openPositionsCount: document.getElementById('open-positions-count'), bestTradesBody: document.getElementById('best-trades-body'), worstTradesBody: document.getElementById('worst-trades-body'), rankName: document.getElementById('rank-name'), positionsTable: document.getElementById('positions-table'), growthChartCanvas: document.getElementById('growthChart')
-        };
+        const UI = { /* UI Elements */ }; // Shortened for brevity
         
-        const ranks = [
-            { level: 0, name: "مستكشف | Cadet", xp_required: 0 }, { level: 1, name: "ملاح | Navigator", xp_required: 100 }, { level: 2, name: "قائد | Commander", xp_required: 500 }, { level: 3, name: "كابتن | Captain", xp_required: 1000 }, { level: 4, name: "أميرال | Admiral", xp_required: 5000 }, { level: 5, name: "أمير المجرة | Galactic Admiral", xp_required: 10000 },
-        ];
+        // --- [ NEW: Localization Store ] ---
+        const translations = {
+            ar: {
+                docTitle: "قمرة قيادة: فضائي مجهول",
+                loading: "...جاري الاتصال بالقاعدة الفضائية",
+                mainTitle: "فضائي مجهول",
+                mainSubtitle: "واجهة المحفظة",
+                journeyProgress: "تقدم الرحلة",
+                tradingLog: "سجل التداول",
+                currentInfo: "المعلومات الحالية",
+                totalEquity: "إجمالي القيمة",
+                activeMissions: "المهمات النشطة",
+                activeMissionsTitle: "المهمات النشطة",
+                bestTradeLabel: "أفضل صفقة:",
+                worstTradeLabel: "أسوأ صفقة:",
+                logEmpty: "السجل فارغ",
+                missionsTable: {
+                    mission: "المهمة", type: "النوع", leverage: "الرافعة", entry: "الدخول", current: "الحالي", pnl_cr: "الربح (CR)", pnl_pct: "الربح (%)"
+                },
+                noActiveMissions: "لا توجد مهمات نشطة",
+                long: "شراء",
+                short: "بيع",
+                errorPrefix: "فشل الاتصال:"
+            },
+            en: {
+                docTitle: "Cockpit: Unknown Alien",
+                loading: "...Connecting to Mothership",
+                mainTitle: "UNKNOWN ALIEN",
+                mainSubtitle: "PORTFOLIO INTERFACE",
+                journeyProgress: "JOURNEY PROGRESS",
+                tradingLog: "TRADING LOG",
+                currentInfo: "CURRENT INFO",
+                totalEquity: "Total Equity",
+                activeMissions: "Active Missions",
+                activeMissionsTitle: "ACTIVE MISSIONS",
+                bestTradeLabel: "BEST TRADE:",
+                worstTradeLabel: "WORST TRADE:",
+                logEmpty: "LOG EMPTY",
+                missionsTable: {
+                    mission: "MISSION", type: "TYPE", leverage: "LEVERAGE", entry: "ENTRY", current: "CURRENT", pnl_cr: "PNL (CR)", pnl_pct: "PNL (%)"
+                },
+                noActiveMissions: "NO ACTIVE MISSIONS",
+                long: "LONG",
+                short: "SHORT",
+                errorPrefix: "Connection Failed:"
+            }
+        };
+
+        const ranks = {
+            ar: [
+                { level: 0, name: "مستكشف", xp_required: 0 }, { level: 1, name: "ملاح", xp_required: 100 }, { level: 2, name: "قائد", xp_required: 500 }, { level: 3, name: "كابتن", xp_required: 1000 }, { level: 4, name: "أميرال", xp_required: 5000 }, { level: 5, name: "أمير المجرة", xp_required: 10000 },
+            ],
+            en: [
+                { level: 0, name: "Cadet", xp_required: 0 }, { level: 1, name: "Navigator", xp_required: 100 }, { level: 2, name: "Commander", xp_required: 500 }, { level: 3, name: "Captain", xp_required: 1000 }, { level: 4, name: "Admiral", xp_required: 5000 }, { level: 5, name: "Galactic Admiral", xp_required: 10000 },
+            ]
+        };
 
         let growthChart = null;
+        let currentLang = 'ar';
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('preferredLang', lang);
+            const isRTL = lang === 'ar';
+            document.documentElement.lang = lang;
+            document.documentElement.dir = isRTL ? 'rtl' : 'ltr';
+
+            document.querySelectorAll('[data-lang]').forEach(el => {
+                const key = el.getAttribute('data-lang');
+                if (translations[lang][key]) {
+                    el.textContent = translations[lang][key];
+                }
+            });
+            document.title = translations[lang].docTitle;
+        }
+
+        // The rest of the script remains largely the same, but uses the `translations` object
+        
+        // --- Initialization and Functions ---
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            // Setup UI object
+            for (const key in translations.ar) {
+                const el = document.querySelector(`[data-lang="${key}"]`);
+                if (el) UI[key] = el;
+            }
+            UI.loadingState = document.getElementById('loading-state');
+            UI.errorState = document.getElementById('error-state');
+            UI.errorMessage = document.getElementById('error-message');
+            UI.dashboardSection = document.getElementById('dashboard-section');
+            UI.totalBalance = document.getElementById('total-balance');
+            UI.openPositionsCount = document.getElementById('open-positions-count');
+            UI.bestTradesBody = document.getElementById('best-trades-body');
+            UI.worstTradesBody = document.getElementById('worst-trades-body');
+            UI.rankName = document.getElementById('rank-name');
+            UI.positionsTable = document.getElementById('positions-table');
+            UI.growthChartCanvas = document.getElementById('growthChart');
+
+            // Language detection and setup
+            const savedLang = localStorage.getItem('preferredLang');
+            const browserLang = navigator.language.split('-')[0];
+            const initialLang = savedLang || (browserLang === 'ar' ? 'ar' : 'en');
+            setLanguage(initialLang);
+            
+            document.getElementById('lang-toggle').addEventListener('click', () => {
+                const newLang = currentLang === 'ar' ? 'en' : 'ar';
+                setLanguage(newLang);
+                fetchAllData(); // Re-fetch and re-render with new language
+            });
+
+            fetchAllData();
+            setInterval(fetchAllData, 60000); 
+        });
 
         function formatNumber(num, decimals = 2) {
             if (typeof num !== 'number' || isNaN(num)) return '--.--';
@@ -148,57 +281,58 @@
             } catch (error) {
                 console.error("Frontend Error:", error);
                 UI.loadingState.classList.add('hidden');
-                UI.errorMessage.textContent = `فشل الاتصال: ${error.message}`;
+                UI.errorMessage.textContent = `${translations[currentLang].errorPrefix} ${error.message}`;
                 UI.errorState.classList.remove('hidden');
             }
         }
         
         function updateDashboard(data, historyData) {
-            // Update KPIs
             UI.totalBalance.textContent = `$${formatNumber(data.totalBalance)}`;
             UI.openPositionsCount.textContent = data.openPositionsCount;
             updateRankSystem(data.totalXP);
             
-            // Update Trading Log
+            const t = translations[currentLang]; // shorthand for current language translations
+
             UI.bestTradesBody.innerHTML = (data.bestTrades && data.bestTrades.length > 0)
-                ? data.bestTrades.map(t => `<div class="data-item text-xs"><span class="text-green-400">BEST TRADE: ${t.symbol}</span><span>+${formatNumber(t.profit)} CR</span></div>`).join('')
-                : '<div class="data-item text-xs"><span>TRADING LOG</span><span>EMPTY</span></div>';
+                ? data.bestTrades.map(trade => `<div class="data-item text-xs"><span class="text-green-400">${t.bestTradeLabel} ${trade.symbol}</span><span>+${formatNumber(trade.profit)} CR</span></div>`).join('')
+                : `<div class="data-item text-xs"><span>${t.tradingLog}</span><span>${t.logEmpty}</span></div>`;
             UI.worstTradesBody.innerHTML = (data.worstTrades && data.worstTrades.length > 0)
-                ? data.worstTrades.map(t => `<div class="data-item text-xs"><span class="text-red-400">WORST TRADE: ${t.symbol}</span><span>${formatNumber(t.profit)} CR</span></div>`).join('')
+                ? data.worstTrades.map(trade => `<div class="data-item text-xs"><span class="text-red-400">${t.worstTradeLabel} ${trade.symbol}</span><span>${formatNumber(trade.profit)} CR</span></div>`).join('')
                 : '';
 
-            // Update Positions Table
+            const tbl = t.missionsTable;
             UI.positionsTable.innerHTML = `
                 <thead><tr class="text-gray-400 border-b border-[var(--border-color)]">
-                    <th class="p-2">MISSION</th><th class="p-2">TYPE</th><th class="p-2">LEVERAGE</th><th class="p-2">ENTRY</th><th class="p-2">CURRENT</th><th class="p-2">PNL (CR)</th><th class="p-2">PNL (%)</th>
+                    <th class="p-2">${tbl.mission}</th><th class="p-2">${tbl.type}</th><th class="p-2">${tbl.leverage}</th><th class="p-2">${tbl.entry}</th><th class="p-2">${tbl.current}</th><th class="p-2">${tbl.pnl_cr}</th><th class="p-2">${tbl.pnl_pct}</th>
                 </tr></thead><tbody id="positions-body"></tbody>`;
             const positionsBody = document.getElementById('positions-body');
             if (data.openPositions && data.openPositions.length > 0) {
                  data.openPositions.forEach(pos => {
                     const pnlClass = pos.pnl >= 0 ? 'text-green-400' : 'text-red-400';
                     positionsBody.innerHTML += `<tr class="border-b border-dashed border-[var(--border-color)]/20">
-                        <td class="p-2 font-bold">${pos.symbol}</td><td class="p-2 ${pnlClass}">${pos.positionType === 'Long' ? 'LONG' : 'SHORT'}</td><td class="p-2">${pos.leverage}x</td>
+                        <td class="p-2 font-bold">${pos.symbol}</td><td class="p-2 ${pnlClass}">${pos.positionType === 'Long' ? t.long : t.short}</td><td class="p-2">${pos.leverage}x</td>
                         <td class="p-2">${formatNumber(pos.entryPrice, 4)}</td><td class="p-2">${formatNumber(pos.currentPrice, 4)}</td>
                         <td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnl)}</td><td class="p-2 font-bold ${pnlClass}">${formatNumber(pos.pnlPercentage)}%</td>
                     </tr>`;
                 });
             } else {
-                 positionsBody.innerHTML = `<tr><td colspan="7" class="text-center p-4 text-gray-500">NO ACTIVE MISSIONS</td></tr>`;
+                 positionsBody.innerHTML = `<tr><td colspan="7" class="text-center p-4 text-gray-500">${t.noActiveMissions}</td></tr>`;
             }
             renderGrowthChart(historyData);
         }
 
         function updateRankSystem(totalXP) {
-            let currentRank = ranks[0];
-            for (let i = 0; i < ranks.length; i++) {
-                if (totalXP >= ranks[i].xp_required) { currentRank = ranks[i]; } else { break; }
+            const currentRanks = ranks[currentLang];
+            let currentRank = currentRanks[0];
+            for (let i = 0; i < currentRanks.length; i++) {
+                if (totalXP >= currentRanks[i].xp_required) { currentRank = currentRanks[i]; } else { break; }
             }
-            UI.rankName.textContent = currentRank.name.split('|')[1].trim().toUpperCase();
+            UI.rankName.textContent = currentRank.name;
         }
 
         function renderGrowthChart(historyData) {
             if (!historyData || historyData.length < 2) return;
-            const labels = historyData.map(d => new Date(d.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            const labels = historyData.map(d => new Date(d.timestamp).toLocaleDateString(currentLang === 'ar' ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' }));
             const dataPoints = historyData.map(d => parseFloat(d.equity));
             if (growthChart) { growthChart.destroy(); }
             Chart.defaults.color = 'var(--text-secondary)';
@@ -222,11 +356,6 @@
                 }
             });
         }
-        
-        document.addEventListener('DOMContentLoaded', () => {
-            fetchAllData();
-            setInterval(fetchAllData, 60000); 
-        });
     </script>
 </body>
 </html>
