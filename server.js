@@ -1,4 +1,4 @@
-=// --- Dependencies ---
+// --- Dependencies ---
 const express = require('express');
 const fetch = require('node-fetch');
 const CryptoJS = require('crypto-js');
@@ -10,7 +10,6 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 3000;
 const API_BASE_URL = 'https://contract.mexc.com';
-const REQUEST_TIMEOUT = 30000; // 30 seconds timeout
 
 // --- API Keys ---
 const apiKey = process.env.MEXC_API_KEY;
@@ -20,125 +19,51 @@ const secretKey = process.env.MEXC_SECRET_KEY;
 app.use(cors());
 app.use(express.static(__dirname));
 
-// --- SUPER-ROBUST HELPER ---
-// This function ensures we always get a valid number, defaulting to 0 if input is bad.
-const safeParseFloat = (value) => {
-    const num = parseFloat(value);
-    return isNaN(num) ? 0 : num;
-};
-
-// --- Helper Functions ---
-async function getAllTickers() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/v1/contract/ticker`);
-        if (!response.ok) return {};
-        const data = await response.json();
-        if (!data.success || !Array.isArray(data.data)) return {};
-        return data.data.reduce((map, ticker) => {
-            map[ticker.symbol] = ticker;
-            return map;
-        }, {});
-    } catch (error) {
-        console.error(`Could not fetch all tickers:`, error.message);
-        return {};
-    }
-}
-
-// --- Main API Route ---
+// --- Main API Route for Diagnostics ---
 app.get('/api/portfolio-data', async (req, res) => {
+    console.log("=============================================");
+    console.log(">>> DIAGNOSTIC RUN STARTED <<<");
+    console.log("=============================================");
+
     if (!apiKey || !secretKey) {
-        return res.status(500).json({ error: 'لم يتم إعداد مفاتيح API على الخادم بشكل صحيح.' });
+        console.error("CRITICAL ERROR: API keys are not configured on the server.");
+        return res.status(500).json({ error: 'API keys not set' });
     }
 
     try {
-        const [allTickers, accountAssetsResponse, openPositionsResponse, historyDealsResponse] = await Promise.all([
-            getAllTickers(),
-            makeRequest('/api/v1/private/account/assets'),
-            makeRequest('/api/v1/private/position/open_positions'),
-            makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 })
-        ]);
-
-        let availableBalance = 0;
-        if (accountAssetsResponse.success && Array.isArray(accountAssetsResponse.data)) {
-            const usdtAsset = accountAssetsResponse.data.find(asset => asset.currency === "USDT");
-            if (usdtAsset) {
-                availableBalance = safeParseFloat(usdtAsset.availableBalance);
-            }
+        // --- Step 1: Fetch Account Assets ---
+        console.log("\n--- [STEP 1/3] FETCHING ACCOUNT ASSETS ---");
+        const accountAssetsResponse = await makeRequest('/api/v1/private/account/assets');
+        console.log("Raw Response from Account Assets:", JSON.stringify(accountAssetsResponse, null, 2));
+        if (!accountAssetsResponse.success) {
+            console.error("Failed to fetch account assets.");
         }
 
-        let openPositions = [];
-        let totalMarginInPositions = 0;
-        let totalUnrealizedPNL = 0;
-
-        if (openPositionsResponse.success && Array.isArray(openPositionsResponse.data)) {
-            totalMarginInPositions = openPositionsResponse.data.reduce((sum, pos) => sum + safeParseFloat(pos.im), 0);
-
-            for (const pos of openPositionsResponse.data) {
-                const ticker = allTickers[pos.symbol];
-                const currentPrice = ticker ? safeParseFloat(ticker.lastPrice) : 0;
-                
-                const openPrice = safeParseFloat(pos.holdAvgPrice);
-                const positionSize = safeParseFloat(pos.holdVol);
-                const contractSize = safeParseFloat(pos.contractSize);
-                const pnlDirection = pos.positionType === 1 ? 1 : -1;
-                
-                const calculatedPNL = (currentPrice > 0) ? (currentPrice - openPrice) * positionSize * contractSize * pnlDirection : 0;
-                totalUnrealizedPNL += calculatedPNL;
-                
-                const margin = safeParseFloat(pos.im) || 1;
-                const pnlPercentage = (calculatedPNL / margin) * 100;
-                
-                openPositions.push({
-                    symbol: pos.symbol,
-                    positionType: pos.positionType === 1 ? 'Long' : 'Short',
-                    leverage: pos.leverage,
-                    openPrice: openPrice,
-                    currentPrice: currentPrice,
-                    unrealizedPNL: calculatedPNL,
-                    pnlPercentage: pnlPercentage
-                });
-            }
+        // --- Step 2: Fetch Open Positions ---
+        console.log("\n--- [STEP 2/3] FETCHING OPEN POSITIONS ---");
+        const openPositionsResponse = await makeRequest('/api/v1/private/position/open_positions');
+        console.log("Raw Response from Open Positions:", JSON.stringify(openPositionsResponse, null, 2));
+        if (!openPositionsResponse.success) {
+            console.error("Failed to fetch open positions.");
         }
         
-        const totalBalance = availableBalance + totalMarginInPositions + totalUnrealizedPNL;
-        
-        let bestTrades = [], worstTrades = [];
-        if (historyDealsResponse.success && historyDealsResponse.data && Array.isArray(historyDealsResponse.data.resultList)) {
-            const closedTrades = historyDealsResponse.data.resultList
-                .filter(order => order.state === 3 && order.dealAvgPrice && order.openAvgPrice && order.vol && order.contractSize)
-                .map(order => {
-                    const openPrice = safeParseFloat(order.openAvgPrice);
-                    const closePrice = safeParseFloat(order.dealAvgPrice);
-                    const positionSize = safeParseFloat(order.vol);
-                    const contractSize = safeParseFloat(order.contractSize);
-                    const pnlDirection = order.openType === 1 ? 1 : -1;
-                    
-                    const calculatedPnl = (closePrice - openPrice) * positionSize * contractSize * pnlDirection;
-                    
-                    return {
-                        symbol: order.symbol, 
-                        pnl: calculatedPnl, 
-                        date: order.updateTime ? new Date(order.updateTime).toLocaleDateString('ar-EG') : 'N/A'
-                    };
-                });
+        // --- Step 3: Fetch All Tickers for prices ---
+        console.log("\n--- [STEP 3/3] FETCHING ALL TICKERS ---");
+        const tickerResponse = await fetch(`${API_BASE_URL}/api/v1/contract/ticker`);
+        const tickerData = await tickerResponse.json();
+        console.log("Raw Response from All Tickers (first 5 symbols):", JSON.stringify(tickerData.data?.slice(0, 5), null, 2));
 
-            closedTrades.sort((a, b) => b.pnl - a.pnl);
-            bestTrades = closedTrades.slice(0, 3);
-            worstTrades = closedTrades.filter(t => t.pnl < 0).slice(-3).reverse();
-        }
 
-        res.json({
-            totalBalance: totalBalance,
-            assetsValue: totalMarginInPositions,
-            openPositionsCount: openPositions.length,
-            openPositions: openPositions,
-            bestTrades: bestTrades,
-            worstTrades: worstTrades
-        });
+        console.log("\n=============================================");
+        console.log(">>> DIAGNOSTIC RUN FINISHED <<<");
+        console.log("=============================================");
+
+        // We send a minimal response just to complete the request
+        res.json({ status: "Diagnostic run completed. Check server logs." });
 
     } catch (error) {
-        console.error('A critical error occurred in the main route:', error);
-        res.status(500).json({ error: `خطأ حرج في الخادم: ${error.message}` });
+        console.error('CRITICAL ERROR during diagnostic run:', error);
+        res.status(500).json({ error: `Server error during diagnostics: ${error.message}` });
     }
 });
 
@@ -146,6 +71,7 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// --- Helper Function for making authenticated requests ---
 async function makeRequest(endpoint, params = {}) {
     const timestamp = Date.now();
     const queryString = new URLSearchParams(params).toString();
@@ -153,30 +79,21 @@ async function makeRequest(endpoint, params = {}) {
     const signature = CryptoJS.HmacSHA256(toSign, secretKey).toString(CryptoJS.enc.Hex);
     let url = `${API_BASE_URL}${endpoint}`;
     if (queryString) url += `?${queryString}`;
-    
-    const controller = new AbortController();
-    const timeout = setTimeout(() => { controller.abort(); }, REQUEST_TIMEOUT);
 
     try {
         const response = await fetch(url, {
             method: 'GET',
-            headers: { 'Content-Type': 'application/json', 'ApiKey': apiKey, 'Request-Time': timestamp, 'Signature': signature },
-            signal: controller.signal
+            headers: { 'Content-Type': 'application/json', 'ApiKey': apiKey, 'Request-Time': timestamp, 'Signature': signature }
         });
-        const text = await response.text();
-        if (!response.ok) throw new Error(`MEXC request failed with status ${response.status}: ${text}`);
-        const jsonResponse = JSON.parse(text);
-        if (jsonResponse.code !== 0) throw new Error(`MEXC API Error (${jsonResponse.code}): ${jsonResponse.msg}`);
-        return { success: true, data: jsonResponse.data };
+        const data = await response.json();
+        return data;
     } catch (error) {
-        if (error.name === 'AbortError') return { success: false, error: 'Request timed out' };
-        return { success: false, error: error.message };
-    } finally {
-        clearTimeout(timeout);
+        console.error(`Error in makeRequest for ${endpoint}:`, error);
+        return { success: false, code: 9999, msg: error.message, data: null };
     }
 }
 
 app.listen(port, () => {
-    console.log(`Server listening at port ${port}`);
+    console.log(`Diagnostic server listening at port ${port}`);
 });
 
