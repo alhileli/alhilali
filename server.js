@@ -21,33 +21,46 @@ app.use(express.static(__dirname));
 
 // --- Main API Route ---
 app.get('/api/portfolio-data', async (req, res) => {
+    console.log("===================================");
+    console.log("==> Received new request for portfolio data...");
+
     if (!apiKey || !secretKey) {
+        console.error("FATAL ERROR: API keys are not configured on the server.");
         return res.status(500).json({ error: 'لم يتم إعداد مفاتيح API على الخادم بشكل صحيح.' });
     }
 
-    try {
-        // Fetch all data concurrently for better performance
-        const [accountAssetsResponse, openPositionsResponse, historyDealsResponse] = await Promise.all([
-            makeRequest('/api/v1/private/account/assets').catch(e => { console.error("Error in assets request:", e.message); return { success: false, data: [] }; }),
-            makeRequest('/api/v1/private/position/open_positions').catch(e => { console.error("Error in open positions request:", e.message); return { success: false, data: [] }; }),
-            makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 }).catch(e => { console.error("Error in history request:", e.message); return { success: false, data: { resultList: [] } }; })
-        ]);
+    let finalData = {
+        totalBalance: 0,
+        assetsValue: 0,
+        assetsCount: 0,
+        openPositions: [],
+        bestTrades: [],
+        worstTrades: []
+    };
 
-        // --- 1. Process Account Assets (Available Balance) ---
-        let availableBalance = 0;
-        let assetsCount = 0;
+    try {
+        // --- STEP 1: Fetch Account Assets ---
+        console.log("[STEP 1/3] Attempting to fetch account assets...");
+        const accountAssetsResponse = await makeRequest('/api/v1/private/account/assets');
         if (accountAssetsResponse.success && Array.isArray(accountAssetsResponse.data)) {
             const assets = accountAssetsResponse.data;
-            availableBalance = assets.reduce((sum, asset) => sum + parseFloat(asset.availableBalance || 0), 0);
-            assetsCount = assets.length;
+            const availableBalance = assets.reduce((sum, asset) => sum + parseFloat(asset.availableBalance || 0), 0);
+            finalData.assetsCount = assets.length;
+            finalData.totalBalance += availableBalance; // Start with available balance
+            console.log(`[STEP 1/3] SUCCESS: Fetched ${assets.length} assets. Available balance: ${availableBalance}`);
+        } else {
+            console.warn("[STEP 1/3] WARNING: Could not fetch account assets or data is empty.", accountAssetsResponse);
         }
 
-        // --- 2. Process Open Positions ---
-        let openPositions = [];
-        let totalMarginInPositions = 0;
+        // --- STEP 2: Fetch Open Positions ---
+        console.log("[STEP 2/3] Attempting to fetch open positions...");
+        const openPositionsResponse = await makeRequest('/api/v1/private/position/open_positions');
         if (openPositionsResponse.success && Array.isArray(openPositionsResponse.data)) {
-            totalMarginInPositions = openPositionsResponse.data.reduce((sum, pos) => sum + parseFloat(pos.im || 0), 0);
-            openPositions = openPositionsResponse.data.map(pos => ({
+            const positions = openPositionsResponse.data;
+            const totalMarginInPositions = positions.reduce((sum, pos) => sum + parseFloat(pos.im || 0), 0);
+            finalData.totalBalance += totalMarginInPositions; // Add margin to total balance
+            finalData.assetsValue = totalMarginInPositions;
+            finalData.openPositions = positions.map(pos => ({
                 symbol: pos.symbol,
                 positionType: pos.positionType === 1 ? 'Long' : 'Short',
                 leverage: pos.leverage,
@@ -56,56 +69,54 @@ app.get('/api/portfolio-data', async (req, res) => {
                 unrealizedPNL: parseFloat(pos.unrealizedPL || 0),
                 pnlPercentage: (parseFloat(pos.unrealizedPL || 0) / (parseFloat(pos.im) || 1)) * 100
             }));
+            console.log(`[STEP 2/3] SUCCESS: Fetched ${positions.length} open positions. Total margin: ${totalMarginInPositions}`);
+        } else {
+            console.warn("[STEP 2/3] WARNING: Could not fetch open positions or data is empty.", openPositionsResponse);
         }
 
-        // --- 3. Calculate TRUE Total Balance ---
-        const totalBalance = availableBalance + totalMarginInPositions;
-        
-        // --- 4. Process and Analyze Trade History ---
-        let bestTrades = [];
-        let worstTrades = [];
+        // --- STEP 3: Fetch Trade History ---
+        console.log("[STEP 3/3] Attempting to fetch trade history...");
+        const historyDealsResponse = await makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 });
         if (historyDealsResponse.success && historyDealsResponse.data && Array.isArray(historyDealsResponse.data.resultList)) {
             const closedTrades = historyDealsResponse.data.resultList
                 .filter(order => order.state === 3 && typeof order.profit !== 'undefined')
                 .map(order => ({
                     symbol: order.symbol,
                     pnl: parseFloat(order.profit),
-                    date: new Date(order.updateTime).toLocaleDateString('ar-EG') // CORRECTED TYPO HERE
+                    date: new Date(order.updateTime).toLocaleDateString('ar-EG')
                 }));
             
             closedTrades.sort((a, b) => b.pnl - a.pnl);
-            bestTrades = closedTrades.slice(0, 3);
-            worstTrades = closedTrades.filter(t => t.pnl < 0).slice(-3).reverse();
+            finalData.bestTrades = closedTrades.slice(0, 3);
+            finalData.worstTrades = closedTrades.filter(t => t.pnl < 0).slice(-3).reverse();
+            console.log(`[STEP 3/3] SUCCESS: Processed ${closedTrades.length} closed trades.`);
+        } else {
+            console.warn("[STEP 3/3] WARNING: Could not fetch trade history or data is empty.", historyDealsResponse);
         }
 
-        // --- 5. Send the final compiled data ---
-        res.json({
-            totalBalance: totalBalance,
-            assetsValue: totalMarginInPositions,
-            assetsCount: assetsCount,
-            openPositions: openPositions,
-            bestTrades: bestTrades,
-            worstTrades: worstTrades
-        });
+        console.log("==> All steps completed. Sending final data to frontend.");
+        res.json(finalData);
 
     } catch (error) {
-        console.error('A critical error occurred in the main route:', error.message);
+        console.error('!!!!!!!!!! A CRITICAL ERROR OCCURRED !!!!!!!!!!!');
+        console.error('ERROR MESSAGE:', error.message);
+        console.error('ERROR STACK:', error.stack);
+        console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
         res.status(500).json({ error: `خطأ حرج في الخادم: ${error.message}` });
     }
 });
 
-// --- Serve the HTML file for all other routes ---
+// --- Serve the HTML file ---
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// --- Helper function for FUTURES API requests ---
+// --- API Request Helper ---
 async function makeRequest(endpoint, params = {}) {
     const timestamp = Date.now();
     const queryString = new URLSearchParams(params).toString();
     const toSign = `${apiKey}${timestamp}${queryString}`;
     const signature = CryptoJS.HmacSHA256(toSign, secretKey).toString(CryptoJS.enc.Hex);
-
     const url = `${API_BASE_URL}${endpoint}?${queryString}`;
     
     const response = await fetch(url, {
@@ -118,20 +129,22 @@ async function makeRequest(endpoint, params = {}) {
         }
     });
 
-    const contentType = response.headers.get("content-type");
-    if (contentType && contentType.indexOf("application/json") !== -1) {
-        const jsonResponse = await response.json();
+    const text = await response.text();
+    if (!response.ok) {
+        throw new Error(`MEXC request failed with status ${response.status}: ${text}`);
+    }
+    try {
+        const jsonResponse = JSON.parse(text);
         if (jsonResponse.code !== 0) {
-             throw new Error(`MEXC API Error (${jsonResponse.code}): ${jsonResponse.msg}`);
+            throw new Error(`MEXC API Error (${jsonResponse.code}): ${jsonResponse.msg}`);
         }
         return jsonResponse;
-    } else {
-        const text = await response.text();
-        throw new Error(`MEXC returned a non-JSON response: ${text}`);
+    } catch (e) {
+        throw new Error(`Failed to parse JSON from MEXC: ${text}`);
     }
 }
 
-// --- Start the server ---
+// --- Start Server ---
 app.listen(port, () => {
     console.log(`Server listening at port ${port}`);
 });
