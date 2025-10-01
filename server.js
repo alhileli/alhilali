@@ -20,15 +20,13 @@ const secretKey = process.env.MEXC_SECRET_KEY;
 app.use(cors());
 app.use(express.static(__dirname));
 
-// --- New helper function to get ALL tickers at once ---
+// --- Helper function to get ALL tickers at once ---
 async function getAllTickers() {
     try {
         const response = await fetch(`${API_BASE_URL}/api/v1/contract/ticker`);
         if (!response.ok) return {};
         const data = await response.json();
         if (!data.success || !Array.isArray(data.data)) return {};
-
-        // Convert array to a map for fast lookups (e.g., tickers['BTC_USDT'])
         const tickersMap = {};
         for (const ticker of data.data) {
             tickersMap[ticker.symbol] = ticker;
@@ -47,7 +45,6 @@ app.get('/api/portfolio-data', async (req, res) => {
     }
 
     try {
-        // Step 1: Fetch all necessary data in parallel
         const [allTickers, accountAssetsResponse, openPositionsResponse, historyDealsResponse] = await Promise.all([
             getAllTickers(),
             makeRequest('/api/v1/private/account/assets'),
@@ -55,7 +52,6 @@ app.get('/api/portfolio-data', async (req, res) => {
             makeRequest('/api/v1/private/order/list_history_orders', { page_size: 200 })
         ]);
 
-        // Step 2: Process Account Assets
         let availableBalance = 0;
         if (accountAssetsResponse.success && Array.isArray(accountAssetsResponse.data)) {
             const usdtAsset = accountAssetsResponse.data.find(asset => asset.currency === "USDT");
@@ -64,7 +60,6 @@ app.get('/api/portfolio-data', async (req, res) => {
             }
         }
 
-        // Step 3: Process Open Positions and calculate PNL
         let openPositions = [];
         let totalMarginInPositions = 0;
         let totalUnrealizedPNL = 0;
@@ -78,12 +73,15 @@ app.get('/api/portfolio-data', async (req, res) => {
                 
                 const positionSize = parseFloat(pos.holdVol);
                 const openPrice = parseFloat(pos.holdAvgPrice);
-                const pnlDirection = pos.positionType === 1 ? 1 : -1; // 1 for Long, -1 for Short
+                const pnlDirection = pos.positionType === 1 ? 1 : -1;
+                // *** THIS IS THE CRITICAL FIX ***
+                // We must multiply by the contract size to get the correct PNL
+                const contractSize = parseFloat(pos.contractSize); 
                 
-                const calculatedPNL = (currentPrice > 0) ? (currentPrice - openPrice) * positionSize * pnlDirection : 0;
+                const calculatedPNL = (currentPrice > 0) ? (currentPrice - openPrice) * positionSize * contractSize * pnlDirection : 0;
                 totalUnrealizedPNL += calculatedPNL;
                 
-                const margin = parseFloat(pos.im) || 1; // Avoid division by zero
+                const margin = parseFloat(pos.im) || 1;
                 const pnlPercentage = (calculatedPNL / margin) * 100;
                 
                 openPositions.push({
@@ -98,10 +96,8 @@ app.get('/api/portfolio-data', async (req, res) => {
             }
         }
         
-        // Step 4: Calculate accurate Total Balance (Equity)
         const totalBalance = availableBalance + totalMarginInPositions + totalUnrealizedPNL;
         
-        // Step 5: Process Trade History
         let bestTrades = [], worstTrades = [];
         if (historyDealsResponse.success && historyDealsResponse.data && Array.isArray(historyDealsResponse.data.resultList)) {
             const closedTrades = historyDealsResponse.data.resultList
@@ -114,10 +110,9 @@ app.get('/api/portfolio-data', async (req, res) => {
             worstTrades = closedTrades.filter(t => t.pnl < 0).slice(-3).reverse();
         }
 
-        // Step 6: Send final, accurate data
         res.json({
             totalBalance: totalBalance,
-            assetsValue: totalMarginInPositions, // This is the total margin used
+            assetsValue: totalMarginInPositions,
             openPositionsCount: openPositions.length,
             openPositions: openPositions,
             bestTrades: bestTrades,
