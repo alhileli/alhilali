@@ -1,8 +1,9 @@
 // -----------------------------------------------------------------------------
-// |                            MEXC PORTFOLIO SERVER                          |
-// |                   VERSION: RPG Upgrade Pt. 1 (Database)                   |
-// | This version connects to a PostgreSQL database to log portfolio history,  |
-// | enabling the future implementation of the growth chart and other RPG elements. |
+// |                  ANONYMOUS ASTRONAUT - SERVER ENGINE                      |
+// |                       VERSION: RPG Mission Control                        |
+// | This is the complete and final server code. It calculates total historical|
+// | profit for XP, connects to the database, and serves all necessary data    |
+// |                  for the RPG-themed frontend.                             |
 // -----------------------------------------------------------------------------
 
 // استيراد المكتبات الضرورية
@@ -12,7 +13,7 @@ import fetch from 'node-fetch';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pg from 'pg'; // <-- الأداة الجديدة التي أضفناها
+import pg from 'pg';
 
 // --- [ CONFIGURATION ] ---
 const { Pool } = pg;
@@ -26,23 +27,18 @@ app.use(cors());
 app.use(express.static(__dirname));
 
 // --- [ DATABASE SETUP ] ---
-// الاتصال بقاعدة البيانات باستخدام العنوان السري الذي أضفته في Render
 let pool;
 if (process.env.DATABASE_URL) {
     pool = new Pool({
         connectionString: process.env.DATABASE_URL,
-        ssl: {
-            rejectUnauthorized: false
-        }
+        ssl: { rejectUnauthorized: false }
     });
 } else {
     console.warn("DATABASE_URL not found. Database features will be disabled.");
 }
 
-
-// دالة لإنشاء جدول السجل التاريخي إذا لم يكن موجوداً
 const initializeDatabase = async () => {
-    if (!pool) return; // لا تعمل إذا لم يتم تكوين قاعدة البيانات
+    if (!pool) return;
     try {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS portfolio_history (
@@ -62,7 +58,6 @@ const apiKey = process.env.MEXC_API_KEY;
 const secretKey = process.env.MEXC_SECRET_KEY;
 const BASE_URL = 'https://contract.mexc.com';
 
-// (جميع الدوال المساعدة مثل createSignature و makeRequest تبقى كما هي)
 function createSignature(timestamp, params = '') {
     const signaturePayload = apiKey + timestamp + params;
     return crypto.createHmac('sha256', secretKey).update(signaturePayload).digest('hex');
@@ -74,11 +69,14 @@ async function makeRequest(method, endpoint, params = '') {
     const url = `${BASE_URL}${endpoint}${params ? '?' + params : ''}`;
     const headers = { 'Content-Type': 'application/json', 'ApiKey': apiKey, 'Request-Time': timestamp, 'Signature': signature };
     const response = await fetch(url, { method, headers, timeout: 30000 });
-    if (!response.ok) { const errorBody = await response.json(); throw new Error(errorBody.msg || 'API Request Failed'); }
+    if (!response.ok) { 
+        const errorBody = await response.json(); 
+        console.error(`API Error on ${endpoint}:`, errorBody);
+        throw new Error(errorBody.msg || 'API Request Failed'); 
+    }
     return await response.json();
 }
 
-// دالة جلب البيانات الرئيسية، الآن مع تسجيل في قاعدة البيانات
 async function getPortfolioDataAndLog() {
     const [assetsData, positionsData, historyData, tickersData, contractDetailsData] = await Promise.all([
         makeRequest('GET', '/api/v1/private/account/assets'),
@@ -88,20 +86,24 @@ async function getPortfolioDataAndLog() {
         fetch(`${BASE_URL}/api/v1/contract/detail`).then(r => r.json()),
     ]);
 
+    // Data Guards to prevent crashes
     const usdtAsset = (assetsData.data || []).find(a => a.currency === 'USDT');
+    const openPositions = positionsData.data || [];
+    const closedOrders = historyData.data || [];
+    const tickers = tickersData.data || [];
+    const contracts = contractDetailsData.data || [];
+    
+    // Use the definitive 'equity' value from the API as the total balance
     const totalEquity = usdtAsset ? usdtAsset.equity : 0;
     
-    // تسجيل القيمة الجديدة للمحفظة في قاعدة البيانات
+    // Log equity to the database periodically
     if (pool) {
         try {
-            // To prevent logging too frequently, let's check the last log time
             const lastLog = await pool.query('SELECT timestamp FROM portfolio_history ORDER BY timestamp DESC LIMIT 1');
             const now = new Date();
             const lastLogTime = lastLog.rows.length > 0 ? new Date(lastLog.rows[0].timestamp) : new Date(0);
-            const minutesSinceLastLog = (now - lastLogTime) / 60000;
-
-            // Only log if it has been more than ~5 minutes
-            if (minutesSinceLastLog > 5) {
+            const minutesSinceLastLog = (now.getTime() - lastLogTime.getTime()) / 60000;
+            if (minutesSinceLastLog > 5) { // Log approximately every 5 minutes
                 await pool.query('INSERT INTO portfolio_history (equity, timestamp) VALUES ($1, NOW())', [totalEquity]);
                 console.log(`Successfully logged new equity: ${totalEquity}`);
             }
@@ -110,12 +112,10 @@ async function getPortfolioDataAndLog() {
         }
     }
 
-    // معالجة وإرجاع جميع البيانات الأخرى كما في السابق
     const totalAssetsValue = usdtAsset ? usdtAsset.positionMargin : 0;
-    const openPositions = positionsData.data ? positionsData.data : [];
     
-    const tickersMap = new Map((tickersData.data || []).map(t => [t.symbol, t.lastPrice]));
-    const contractSizeMap = new Map((contractDetailsData.data || []).map(c => [c.symbol, c.contractSize]));
+    const tickersMap = new Map(tickers.map(t => [t.symbol, t.lastPrice]));
+    const contractSizeMap = new Map(contracts.map(c => [c.symbol, c.contractSize]));
     
     const processedPositions = openPositions.map(pos => {
         const currentPrice = tickersMap.get(pos.symbol) || 0;
@@ -125,10 +125,13 @@ async function getPortfolioDataAndLog() {
         return { symbol: pos.symbol, positionType: pos.positionType === 1 ? 'Long' : 'Short', leverage: pos.leverage, entryPrice: pos.holdAvgPrice, currentPrice: currentPrice, pnl, pnlPercentage };
     });
     
-    const closedTrades = (historyData.data || []).filter(o => o.state === 3 && o.profit !== 0).map(o => ({ symbol: o.symbol, profit: o.profit || 0, closeDate: o.updateTime ? new Date(o.updateTime).toLocaleDateString('ar-EG') : 'N/A' }));
+    const closedTrades = closedOrders.filter(o => o.state === 3 && o.profit !== 0).map(o => ({ symbol: o.symbol, profit: o.profit || 0, closeDate: o.updateTime ? new Date(o.updateTime).toLocaleDateString('ar-EG') : 'N/A' }));
     const profitableTrades = closedTrades.filter(t => t.profit > 0).sort((a, b) => b.profit - a.profit);
     const losingTrades = closedTrades.filter(t => t.profit < 0).sort((a, b) => a.profit - b.profit);
     
+    // NEW: Calculate total profit for XP
+    const totalHistoricalProfit = profitableTrades.reduce((sum, trade) => sum + trade.profit, 0);
+
     return {
         totalBalance: totalEquity,
         assetsValue: totalAssetsValue,
@@ -136,14 +139,14 @@ async function getPortfolioDataAndLog() {
         openPositions: processedPositions,
         bestTrades: profitableTrades.slice(0, 3),
         worstTrades: losingTrades.slice(0, 3),
+        totalXP: totalHistoricalProfit, // Send total profit as XP
     };
 }
 
-
-// --- [ API ENDPOINTS ] ---
+// API Endpoints
 app.get('/api/portfolio-data', async (req, res) => {
     try {
-        const data = await getPortfolioDataAndLog(); // استخدام الدالة الجديدة
+        const data = await getPortfolioDataAndLog();
         res.json(data);
     } catch (error) {
         console.error("Error in /api/portfolio-data endpoint:", error);
@@ -151,20 +154,13 @@ app.get('/api/portfolio-data', async (req, res) => {
     }
 });
 
-// نقطة بيانات جديدة للمخطط البياني
 app.get('/api/portfolio-history', async (req, res) => {
-    if (!pool) {
-        return res.status(503).json({ error: "Database service is not configured." });
-    }
+    if (!pool) { return res.status(503).json({ error: "Database service is not configured." }); }
     try {
-        // Fetch a limited number of points, maybe one per day for the last 90 days for performance
         const history = await pool.query(`
             WITH daily_equity AS (
-                SELECT
-                    DATE_TRUNC('day', timestamp) AS day,
-                    AVG(equity) as avg_equity
-                FROM portfolio_history
-                WHERE timestamp > NOW() - INTERVAL '90 days'
+                SELECT DATE_TRUNC('day', timestamp) AS day, AVG(equity) as avg_equity
+                FROM portfolio_history WHERE timestamp > NOW() - INTERVAL '90 days'
                 GROUP BY day
             )
             SELECT avg_equity as equity, day as timestamp FROM daily_equity ORDER BY day ASC;
@@ -176,15 +172,14 @@ app.get('/api/portfolio-history', async (req, res) => {
     }
 });
 
-
-// تقديم الواجهة الأمامية
+// Serve Frontend
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// --- [ SERVER START ] ---
+// Start Server
 app.listen(PORT, () => {
     console.log(`Server listening at port ${PORT}`);
-    initializeDatabase(); // فحص/إنشاء جدول قاعدة البيانات عند بدء تشغيل الخادم
+    initializeDatabase();
 });
 
