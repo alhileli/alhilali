@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>رحلة المتداول (MEXC)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- المكتبة اللازمة لرسم المخطط البياني -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,7 +17,6 @@
         .loader { border: 4px solid #30363d; border-top: 4px solid #388bfd; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         th, td { white-space: nowrap; }
-        /* تصميم شريط التقدم */
         .progress-bar-bg { background-color: #30363d; }
         .progress-bar-fill { background: linear-gradient(90deg, #388bfd, #4d9aff); transition: width 0.5s ease-in-out; }
     </style>
@@ -42,60 +40,70 @@
         </div>
 
         <div id="dashboard-section" class="hidden space-y-12">
-            <!-- قسم رحلة المتداول الجديد -->
-            <div class="card p-6">
-                <h2 class="text-xl font-bold text-white mb-4">التقدم نحو الهدف التالي</h2>
-                <div class="flex justify-between items-center text-sm text-gray-400 mb-2">
-                    <span id="milestone-start">$0</span>
-                    <span id="milestone-end">$20</span>
+            
+            <!-- NEW LAYOUT: KPIs and Journey Bar side-by-side -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                <!-- Main KPIs on the left -->
+                <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="card p-6 flex flex-col justify-center items-center">
+                        <h3 class="text-gray-400 text-lg">إجمالي قيمة المحفظة (USDT)</h3>
+                        <p id="total-balance" class="text-3xl font-bold text-white mt-2">--.--</p>
+                    </div>
+                    <div class="card p-6 flex flex-col justify-center items-center">
+                        <h3 class="text-gray-400 text-lg">الهامش المستخدم (USDT)</h3>
+                        <p id="assets-value" class="text-3xl font-bold text-white mt-2">--.--</p>
+                    </div>
+                    <div class="card p-6 flex flex-col justify-center items-center">
+                        <h3 class="text-gray-400 text-lg">عدد المراكز المفتوحة</h3>
+                        <p id="open-positions-count" class="text-3xl font-bold mt-2">--</p>
+                    </div>
                 </div>
-                <div class="w-full progress-bar-bg rounded-full h-4">
-                    <div id="progress-bar" class="progress-bar-fill h-4 rounded-full" style="width: 0%"></div>
+
+                <!-- Journey Bar on the right -->
+                <div class="lg:col-span-1 card p-6 flex flex-col justify-center">
+                    <h2 class="text-lg font-bold text-white mb-3 text-center">التقدم نحو الهدف التالي</h2>
+                    <div class="flex justify-between items-center text-sm text-gray-400 mb-2">
+                        <span id="milestone-start">$0</span>
+                        <span id="milestone-end">$20</span>
+                    </div>
+                    <div class="w-full progress-bar-bg rounded-full h-4">
+                        <div id="progress-bar" class="progress-bar-fill h-4 rounded-full" style="width: 0%"></div>
+                    </div>
+                    <p id="milestone-quote" class="text-center text-sm mt-3 text-gray-300 italic">"</p>
                 </div>
-                <p id="milestone-quote" class="text-center mt-4 text-gray-300 italic">"</p>
+
             </div>
 
-            <!-- مخطط نمو المحفظة الجديد -->
+            <!-- Portfolio Growth Chart -->
             <div class="card p-6">
                 <h2 class="text-xl font-bold text-white mb-4">مخطط نمو المحفظة</h2>
                 <canvas id="growthChart"></canvas>
             </div>
 
-            <!-- قسم مؤشرات الأداء الرئيسية -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-                <div class="card p-6 flex flex-col justify-center items-center">
-                    <h3 class="text-gray-400 text-lg">إجمالي قيمة المحفظة (USDT)</h3>
-                    <p id="total-balance" class="text-3xl font-bold text-white mt-2">--.--</p>
-                </div>
-                <div class="card p-6 flex flex-col justify-center items-center">
-                    <h3 class="text-gray-400 text-lg">الهامش المستخدم (USDT)</h3>
-                    <p id="assets-value" class="text-3xl font-bold text-white mt-2">--.--</p>
-                </div>
-                <div class="card p-6 flex flex-col justify-center items-center">
-                    <h3 class="text-gray-400 text-lg">عدد المراكز المفتوحة</h3>
-                    <p id="open-positions-count" class="text-3xl font-bold mt-2">--</p>
-                </div>
-            </div>
-
-            <!-- قسم المراكز المفتوحة -->
+            <!-- Open Positions Section -->
             <div>
                 <h2 class="text-2xl font-bold text-white mb-4">المراكز المفتوحة حالياً</h2>
                 <div class="card overflow-x-auto">
                     <table id="positions-table" class="w-full text-right">
-                        <!-- المحتوى سيتم إنشاؤه بواسطة JavaScript -->
+                        <!-- Content will be generated by JS -->
                     </table>
                 </div>
             </div>
 
-            <!-- قسم الصفقات التاريخية -->
+            <!-- [FIXED] Historical Trades Section -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                     <h2 class="text-2xl font-bold text-green-400 mb-4 text-center">أفضل 3 صفقات رابحة</h2>
-                    <div id="best-trades-body" class="space-y-3"></div>
+                    <div id="best-trades-body" class="space-y-3">
+                        <!-- JS will populate this -->
+                    </div>
                 </div>
                  <div>
                     <h2 class="text-2xl font-bold text-red-400 mb-4 text-center">أسوأ 3 صفقات خاسرة</h2>
-                    <div id="worst-trades-body" class="space-y-3"></div>
+                    <div id="worst-trades-body" class="space-y-3">
+                        <!-- JS will populate this -->
+                    </div>
                 </div>
             </div>
         </div>
@@ -105,6 +113,9 @@
     </div>
 
     <script>
+        // --- This script is largely the same as the previous version, ---
+        // --- with minor adjustments to ensure all elements are correctly targeted. ---
+        
         const UI = {
             loadingState: document.getElementById('loading-state'),
             errorState: document.getElementById('error-state'),
@@ -116,7 +127,6 @@
             positionsTable: document.getElementById('positions-table'),
             bestTradesBody: document.getElementById('best-trades-body'),
             worstTradesBody: document.getElementById('worst-trades-body'),
-            // عناصر الواجهة الجديدة
             progressBar: document.getElementById('progress-bar'),
             milestoneStart: document.getElementById('milestone-start'),
             milestoneEnd: document.getElementById('milestone-end'),
@@ -124,7 +134,6 @@
             growthChartCanvas: document.getElementById('growthChart'),
         };
 
-        // --- إعدادات عناصر اللعبة ---
         const milestones = [
             { target: 20, quote: "كل رحلة عظيمة تبدأ بخطوة صغيرة. هذه هي خطوتك الأولى نحو القمة." },
             { target: 50, quote: "لقد بدأت تفهم اللعبة. استمر في التعلم والنمو، فالفرص لا تنتهي." },
@@ -136,7 +145,7 @@
             { target: Infinity, quote: "لقد أصبحت أسطورة في السوق. استمر في إلهام الآخرين." }
         ];
 
-        let growthChart = null; // متغير لحفظ نسخة المخطط البياني
+        let growthChart = null;
 
         function formatNumber(num, decimals = 2) {
             if (typeof num !== 'number' || isNaN(num)) return '--.--';
@@ -145,24 +154,24 @@
         
         async function fetchAllData() {
             try {
-                // جلب كلا مجموعتي البيانات في نفس الوقت
                 const [portfolioRes, historyRes] = await Promise.all([
                     fetch('/api/portfolio-data'),
                     fetch('/api/portfolio-history')
                 ]);
 
-                if (!portfolioRes.ok) throw new Error((await portfolioRes.json()).error);
-                if (!historyRes.ok) throw new Error((await historyRes.json()).error);
+                if (!portfolioRes.ok) throw new Error((await portfolioRes.json()).error || 'Failed to fetch portfolio data');
+                if (!historyRes.ok) {
+                    console.warn('Could not fetch portfolio history. Chart will not be updated.');
+                    // Don't throw an error, just proceed without chart data
+                }
 
                 const portfolioData = await portfolioRes.json();
-                const historyData = await historyRes.json();
+                const historyData = historyRes.ok ? await historyRes.json() : [];
 
-                // تحديث جميع مكونات الواجهة
                 updateDashboard(portfolioData);
                 updateMilestoneProgress(portfolioData.totalBalance);
                 renderGrowthChart(historyData);
 
-                // إظهار لوحة التحكم
                 UI.loadingState.classList.add('hidden');
                 UI.errorState.classList.add('hidden');
                 UI.dashboardSection.classList.remove('hidden');
@@ -180,7 +189,6 @@
             UI.assetsValueElem.textContent = formatNumber(data.assetsValue);
             UI.openPositionsCountElem.textContent = data.openPositionsCount;
             
-            // إعادة بناء الجدول بالكامل بما في ذلك الرؤوس
             UI.positionsTable.innerHTML = `
                 <thead class="bg-[#21262d] text-gray-300">
                     <tr>
@@ -216,7 +224,7 @@
                  positionsBody.innerHTML = `<tr><td colspan="7" class="text-center p-6 text-gray-500">لا توجد مراكز مفتوحة حالياً.</td></tr>`;
             }
             
-            // (منطق أفضل وأسوأ الصفقات يبقى كما هو)
+            // [FIXED] This logic is now restored
             UI.bestTradesBody.innerHTML = '';
             if (data.bestTrades && data.bestTrades.length > 0) {
                  data.bestTrades.forEach(trade => {
@@ -255,7 +263,6 @@
 
             const range = currentMilestone.target - previousMilestoneTarget;
             const progress = currentBalance - previousMilestoneTarget;
-            // Handle division by zero if range is 0
             const percentage = range > 0 ? Math.min(100, (progress / range) * 100) : 100;
 
             UI.progressBar.style.width = `${percentage}%`;
@@ -271,7 +278,7 @@
             const dataPoints = historyData.map(d => parseFloat(d.equity));
 
             if (growthChart) {
-                growthChart.destroy(); // تدمير المخطط القديم قبل إنشاء واحد جديد
+                growthChart.destroy();
             }
 
             growthChart = new Chart(UI.growthChartCanvas, {
@@ -289,22 +296,8 @@
                 },
                 options: {
                     responsive: true,
-                    scales: {
-                        y: { 
-                            beginAtZero: false, // Don't force start at zero
-                            ticks: { color: '#8b949e' }
-                        },
-                        x: {
-                            ticks: { color: '#8b949e' }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            labels: {
-                                color: '#c9d1d9'
-                            }
-                        }
-                    }
+                    scales: { y: { beginAtZero: false, ticks: { color: '#8b949e' } }, x: { ticks: { color: '#8b949e' } } },
+                    plugins: { legend: { labels: { color: '#c9d1d9' } } }
                 }
             });
         }
