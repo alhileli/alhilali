@@ -71,25 +71,19 @@ app.get('/api/portfolio-data', async (req, res) => {
                 const ticker = allTickers[pos.symbol];
                 const currentPrice = ticker ? parseFloat(ticker.lastPrice) : 0;
                 
-                const positionSize = parseFloat(pos.holdVol);
-                const openPrice = parseFloat(pos.holdAvgPrice);
-                const pnlDirection = pos.positionType === 1 ? 1 : -1;
-                const contractSize = parseFloat(pos.contractSize); 
-                
-                // *** THE ULTIMATE FIX: Revert to manual calculation with the correct Contract Size formula ***
-                const calculatedPNL = (currentPrice > 0) ? (currentPrice - openPrice) * positionSize * contractSize * pnlDirection : 0;
-                totalUnrealizedPNL += calculatedPNL;
+                const unrealizedPNL = parseFloat(pos.unrealizedPnl || 0);
+                totalUnrealizedPNL += unrealizedPNL;
                 
                 const margin = parseFloat(pos.im) || 1;
-                const pnlPercentage = (calculatedPNL / margin) * 100;
+                const pnlPercentage = (unrealizedPNL / margin) * 100;
                 
                 openPositions.push({
                     symbol: pos.symbol,
                     positionType: pos.positionType === 1 ? 'Long' : 'Short',
                     leverage: pos.leverage,
-                    openPrice: openPrice,
+                    openPrice: parseFloat(pos.holdAvgPrice),
                     currentPrice: currentPrice,
-                    unrealizedPNL: calculatedPNL,
+                    unrealizedPNL: unrealizedPNL,
                     pnlPercentage: pnlPercentage
                 });
             }
@@ -102,7 +96,11 @@ app.get('/api/portfolio-data', async (req, res) => {
             const closedTrades = historyDealsResponse.data.resultList
                 .filter(order => order.state === 3 && typeof order.profit !== 'undefined')
                 .map(order => ({
-                    symbol: order.symbol, pnl: parseFloat(order.profit), date: new Date(order.updateTime).toLocaleDateString('ar-EG')
+                    symbol: order.symbol, 
+                    pnl: parseFloat(order.profit), 
+                    // *** THIS IS THE CRITICAL FIX ***
+                    // We now check if updateTime exists before trying to format it.
+                    date: order.updateTime ? new Date(order.updateTime).toLocaleDateString('ar-EG') : 'N/A'
                 }));
             closedTrades.sort((a, b) => b.pnl - a.pnl);
             bestTrades = closedTrades.slice(0, 3);
